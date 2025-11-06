@@ -2,9 +2,9 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
-// extern crate mosaic;
-use mosaic::utils::print_entries;
-use mosaic::{load_data, load_model};
+// extern crate mptk;
+use mptk::utils::print_entries;
+use mptk::{load_data, load_model};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]

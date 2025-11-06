@@ -1,21 +1,21 @@
-# mosaic
+# MPTK (MathProg Translation Kit)
 
-Starting point for converting GLPK MathProg .mod and .dat to MPS files.
-
-Rough objectives:
-- generate a grammar for .mod and .dat files
-- convert to an IR of some sort
-- output to MPS
+## Objectives:
+- [x] A grammar capable of parsing [GMPL](https://en.wikibooks.org/wiki/GLPK/GMPL_(MathProg)) .mod and .dat files
+- [x] Complete internal representation (IR) of parsed models and data
+- [ ] Collate model and data sections
+- [ ] Interpret functions, domains etc in the model 
+- [ ] Output to [MPS](https://en.wikipedia.org/wiki/MPS_(format))
 
 ## Quickstart
 Install
 ```bash
-# not yet available
+cargo install mptk
 ```
 
 Usage
 ```bash
-mosaic osemosys.mod atlantis.dat
+mptk osemosys.mod atlantis.dat
 ```
 
 ## GMPL

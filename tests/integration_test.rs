@@ -1,4 +1,4 @@
-use mosaic::load_model;
+use mptk::load_model;
 
 #[test]
 fn test_load() {

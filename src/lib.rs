@@ -1,8 +1,8 @@
 #![allow(clippy::let_and_return)]
 
-//! # mosaic
+//! # mptk
 //!
-//! `mosaic` is a GMPL parser and converter
+//! `mptk` is a GMPL parser and converter
 
 use crate::data::Entry;
 

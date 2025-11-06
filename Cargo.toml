@@ -15,11 +15,11 @@ pest = "2.8.3"
 pest_derive = "2.8.3"
 
 [lib]
-name = "mosaic"
+name = "mptk"
 crate-type = ["cdylib", "lib"]
 
 [[bin]]
-name = "mosaic"
+name = "mptk"
 path = "src/main.rs"
 
 [dev-dependencies]
