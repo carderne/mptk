@@ -20,6 +20,9 @@ enum Commands {
     Check {
         path: String,
         data_path: Option<String>,
+        /// Display full Debug output instead of concise Display output
+        #[arg(short, long)]
+        verbose: bool,
     },
 }
 
@@ -31,7 +34,7 @@ fn main() -> ExitCode {
     env_logger::init();
     let cli = Cli::parse();
     match &cli.command {
-        Commands::Check { path, data_path } => {
+        Commands::Check { path, data_path, verbose } => {
             let model_entries = load_model(path);
             let data_entries = if let Some(data_path) = data_path {
                 load_data(data_path)
@@ -39,7 +42,7 @@ fn main() -> ExitCode {
                 vec![]
             };
             let entries = [&model_entries[..], &data_entries[..]].concat();
-            print_entries(&entries);
+            print_entries(&entries, *verbose);
             set_exit()
         }
     }

@@ -1,7 +1,11 @@
 use crate::data::Entry;
 
-pub fn print_entries(entries: &Vec<Entry>) {
+pub fn print_entries(entries: &Vec<Entry>, verbose: bool) {
     for d in entries {
-        println!("{d}")
+        if verbose {
+            println!("{:?}", d)
+        } else {
+            println!("{}", d)
+        }
     }
 }

@@ -45,8 +45,8 @@ impl Var {
 impl fmt::Display for Var {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "var {}", self.name)?;
-        if let Some(domain) = &self.domain {
-            write!(f, " {}", domain)?;
+        if self.domain.is_some() {
+            write!(f, " <domain>")?;
         }
         if let Some(bounds) = &self.bounds {
             write!(f, " {}", bounds)?;
@@ -123,23 +123,23 @@ impl Param {
 impl fmt::Display for Param {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "param {}", self.name)?;
-        if let Some(domain) = &self.domain {
-            write!(f, " {}", domain)?;
+        if self.domain.is_some() {
+            write!(f, " <domain>")?;
         }
         if let Some(ptype) = &self.param_type {
             write!(f, " {}", ptype)?;
         }
-        for cond in &self.conditions {
-            write!(f, " {}", cond)?;
+        if !self.conditions.is_empty() {
+            write!(f, " <conditions>")?;
         }
-        if let Some(pin) = &self.param_in {
-            write!(f, " in {}", pin)?;
+        if self.param_in.is_some() {
+            write!(f, " in <expr>")?;
         }
-        if let Some(def) = &self.default {
-            write!(f, " default {}", def)?;
+        if self.default.is_some() {
+            write!(f, " default <expr>")?;
         }
-        if let Some(asgn) = &self.assign {
-            write!(f, " := {}", asgn)?;
+        if self.assign.is_some() {
+            write!(f, " := <expr>")?;
         }
         Ok(())
     }
@@ -198,7 +198,7 @@ impl Objective {
 
 impl fmt::Display for Objective {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} {}: {}", self.sense, self.name, self.expr)
+        write!(f, "{} {}: <expr>", self.sense, self.name)
     }
 }
 
@@ -235,21 +235,11 @@ impl Constraint {
 
 impl fmt::Display for Constraint {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Constraint {{\n  name: \"{}\"", self.name)?;
-        if let Some(domain) = &self.domain {
-            write!(f, ",\n  domain: {}", domain)?;
+        write!(f, "constraint {}", self.name)?;
+        if self.domain.is_some() {
+            write!(f, " <domain>")?;
         }
-        if !self.constraint_exprs.is_empty() {
-            write!(f, ",\n  constraints: [")?;
-            for (i, ce) in self.constraint_exprs.iter().enumerate() {
-                if i > 0 {
-                    write!(f, ", ")?;
-                }
-                write!(f, "{}", ce)?;
-            }
-            write!(f, "]")?;
-        }
-        write!(f, "\n}}")
+        write!(f, ": <{} constraint expr(s)>", self.constraint_exprs.len())
     }
 }
 
@@ -279,14 +269,7 @@ impl DataSet {
 
 impl fmt::Display for DataSet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "set {} := ", self.name)?;
-        for (i, val) in self.values.iter().enumerate() {
-            if i > 0 {
-                write!(f, " ")?;
-            }
-            write!(f, "{}", val)?;
-        }
-        Ok(())
+        write!(f, "data: set {} := <{} values>", self.name, self.values.len())
     }
 }
 
@@ -323,15 +306,12 @@ impl DataParam {
 
 impl fmt::Display for DataParam {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "param {}", self.name)?;
-        if let Some(def) = &self.default {
-            write!(f, " default {}", def)?;
+        write!(f, "data: param {}", self.name)?;
+        if self.default.is_some() {
+            write!(f, " default <value>")?;
         }
         if !self.tables.is_empty() {
-            write!(f, " :=")?;
-            for table in &self.tables {
-                write!(f, "\n{}", table)?;
-            }
+            write!(f, " := <{} table(s)>", self.tables.len())?;
         }
         Ok(())
     }
@@ -368,14 +348,10 @@ impl Domain {
 impl fmt::Display for Domain {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{{")?;
-        for (i, part) in self.parts.iter().enumerate() {
-            if i > 0 {
-                write!(f, ", ")?;
-            }
-            write!(f, "{}", part)?;
-        }
-        if let Some(cond) = &self.condition {
-            write!(f, ": {}", cond)?;
+        let vars: Vec<_> = self.parts.iter().map(|p| p.var.as_str()).collect();
+        write!(f, "{}", vars.join(", "))?;
+        if self.condition.is_some() {
+            write!(f, ": <condition>")?;
         }
         write!(f, "}}")
     }
@@ -432,7 +408,7 @@ impl ConstraintExpr {
 
 impl fmt::Display for ConstraintExpr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} {} {}", self.lhs, self.op, self.rhs)
+        write!(f, "<expr> {} <expr>", self.op)
     }
 }
 
@@ -496,15 +472,7 @@ impl LogicExpr {
 
 impl fmt::Display for LogicExpr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for (i, part) in self.parts.iter().enumerate() {
-            if i > 0
-                && let Some(op) = self.operators.get(i - 1)
-            {
-                write!(f, " {} ", op)?;
-            }
-            write!(f, "{}", part)?;
-        }
-        Ok(())
+        write!(f, "<logic expr>")
     }
 }
 
@@ -521,10 +489,7 @@ pub enum LogicExprPart {
 
 impl fmt::Display for LogicExprPart {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            LogicExprPart::Comparison { lhs, op, rhs } => write!(f, "{} {} {}", lhs, op, rhs),
-            LogicExprPart::Compound(expr) => write!(f, "({})", expr),
-        }
+        write!(f, "<logic part>")
     }
 }
 
@@ -579,18 +544,7 @@ impl Expr {
 
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.negated {
-            write!(f, "-")?;
-        }
-        for (i, term) in self.terms.iter().enumerate() {
-            if i > 0
-                && let Some(op) = self.operators.get(i - 1)
-            {
-                write!(f, " {} ", op)?;
-            }
-            write!(f, "{}", term)?;
-        }
-        Ok(())
+        write!(f, "<expr>")
     }
 }
 
@@ -611,11 +565,11 @@ impl fmt::Display for ExprTerm {
         match self {
             ExprTerm::Number(n) => write!(f, "{}", n),
             ExprTerm::VarSubscripted(v) => write!(f, "{}", v),
-            ExprTerm::FuncSum(fs) => write!(f, "{}", fs),
-            ExprTerm::FuncMin(fm) => write!(f, "{}", fm),
-            ExprTerm::FuncMax(fm) => write!(f, "{}", fm),
-            ExprTerm::Conditional(c) => write!(f, "{}", c),
-            ExprTerm::Expr(e) => write!(f, "({})", e),
+            ExprTerm::FuncSum(_) => write!(f, "<sum>"),
+            ExprTerm::FuncMin(_) => write!(f, "<min>"),
+            ExprTerm::FuncMax(_) => write!(f, "<max>"),
+            ExprTerm::Conditional(_) => write!(f, "<if-then-else>"),
+            ExprTerm::Expr(_) => write!(f, "(<expr>)"),
         }
     }
 }
@@ -647,7 +601,7 @@ impl ExprOrLiteral {
 impl fmt::Display for ExprOrLiteral {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ExprOrLiteral::Expr(e) => write!(f, "{}", e),
+            ExprOrLiteral::Expr(_) => write!(f, "<expr>"),
             ExprOrLiteral::StringLiteral(s) => write!(f, "{}", s),
         }
     }
@@ -680,8 +634,8 @@ impl VarSubscripted {
 impl fmt::Display for VarSubscripted {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.var)?;
-        if let Some(sub) = &self.subscript {
-            write!(f, "{}", sub)?;
+        if self.subscript.is_some() {
+            write!(f, "[...]")?;
         }
         Ok(())
     }
@@ -810,7 +764,7 @@ impl FuncSum {
 
 impl fmt::Display for FuncSum {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "sum {} {}", self.domain, self.operand)
+        write!(f, "sum <domain> <operand>")
     }
 }
 
@@ -838,7 +792,7 @@ impl fmt::Display for FuncSumOperand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             FuncSumOperand::VarSubscripted(v) => write!(f, "{}", v),
-            FuncSumOperand::Expr(e) => write!(f, "({})", e),
+            FuncSumOperand::Expr(_) => write!(f, "(<expr>)"),
         }
     }
 }
@@ -872,7 +826,7 @@ impl FuncMin {
 
 impl fmt::Display for FuncMin {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "min {} min({})", self.domain, self.var)
+        write!(f, "min <domain> min(<var>)")
     }
 }
 
@@ -905,7 +859,7 @@ impl FuncMax {
 
 impl fmt::Display for FuncMax {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "max {} max({})", self.domain, self.var)
+        write!(f, "max <domain> max(<var>)")
     }
 }
 
@@ -966,9 +920,9 @@ impl Conditional {
 
 impl fmt::Display for Conditional {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "if {} then {}", self.condition, self.then_expr)?;
-        if let Some(else_e) = &self.else_expr {
-            write!(f, " else {}", else_e)?;
+        write!(f, "if <condition> then <expr>")?;
+        if self.else_expr.is_some() {
+            write!(f, " else <expr>")?;
         }
         Ok(())
     }
@@ -1200,7 +1154,7 @@ impl ParamCondition {
 
 impl fmt::Display for ParamCondition {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} {}", self.op, self.value)
+        write!(f, "{} <value>", self.op)
     }
 }
 
@@ -1278,28 +1232,10 @@ impl ParamDataTable {
 
 impl fmt::Display for ParamDataTable {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(target) = &self.target {
-            write!(f, "  [")?;
-            for (i, t) in target.iter().enumerate() {
-                if i > 0 {
-                    write!(f, ", ")?;
-                }
-                write!(f, "{}", t)?;
-            }
-            write!(f, "] ")?;
+        if self.target.is_some() {
+            write!(f, " [<target>]")?;
         }
-        write!(f, ": ")?;
-        for (i, col) in self.cols.iter().enumerate() {
-            if i > 0 {
-                write!(f, " ")?;
-            }
-            write!(f, "{}", col)?;
-        }
-        write!(f, " :=")?;
-        for row in &self.rows {
-            write!(f, "\n  {}", row)?;
-        }
-        Ok(())
+        write!(f, " {} cols, {} rows", self.cols.len(), self.rows.len())
     }
 }
 
@@ -1356,11 +1292,7 @@ impl ParamDataRow {
 
 impl fmt::Display for ParamDataRow {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.label)?;
-        for val in &self.values {
-            write!(f, " {}", val)?;
-        }
-        Ok(())
+        write!(f, "{} <{} values>", self.label, self.values.len())
     }
 }
 

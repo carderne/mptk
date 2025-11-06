@@ -1,4 +1,4 @@
-# GMPL Pest Grammar Documentation
+# Grammar description
 
 This Pest grammar parses GMPL (GNU MathProg Language), the modeling language used by GLPK for linear and mixed-integer programming problems.
 

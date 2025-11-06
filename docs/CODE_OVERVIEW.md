@@ -1,4 +1,4 @@
-# How MPTK Works
+# Code Overview
 
 MPTK (MathProg Translation Kit) is a Rust-based parser for GLPK's MathProg (GMPL) language, which is used to define linear and mixed-integer programming problems. The project parses `.mod` model files and `.dat` data files into a strongly-typed intermediate representation, with the long-term goal of converting them to MPS (Mathematical Programming System) format.
 

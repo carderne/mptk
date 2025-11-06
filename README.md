@@ -18,13 +18,6 @@ Usage
 mptk osemosys.mod atlantis.dat
 ```
 
-## GMPL
-Language reference: https://en.wikibooks.org/wiki/GLPK/GMPL_(MathProg)
-
-## Questions
-1. MathProg has built-in functions like `abs(x)`, `max(x1, x2, ..., xn)`. These will need to be manually linearized, and not all will be supported (eg `tan(x)`).
-
-
 ## Development
 Please install [cargo-make](https://github.com/sagiegurari/cargo-make):
 ```bash
