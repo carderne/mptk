@@ -1,89 +1,104 @@
 use std::fmt;
+use std::sync::LazyLock;
 
-use pest::iterators::Pair;
+use pest::iterators::{Pair, Pairs};
+use pest::pratt_parser::{Assoc::*, Op, PrattParser};
 
 use crate::{
-    gmpl::atoms::{BoolOp, FuncMax, FuncMin, FuncSum, MathOp, RelOp, VarSubscripted},
+    gmpl::atoms::{BoolOp, Domain, FuncMax, FuncMin, FuncSum, MathOp, RelOp, VarSubscripted},
     grammar::Rule,
 };
 
-/// Expression
+static PRATT_PARSER: LazyLock<PrattParser<Rule>> = LazyLock::new(|| {
+    PrattParser::new()
+        // Precedence lowest to highest (per GMPL spec)
+        .op(Op::infix(Rule::add, Left) | Op::infix(Rule::sub, Left))
+        .op(Op::prefix(Rule::sum_prefix)) // iterated ops: between add/sub and mul/div
+        .op(Op::infix(Rule::mul, Left) | Op::infix(Rule::div, Left))
+        .op(Op::prefix(Rule::neg))
+        .op(Op::infix(Rule::pow, Right))
+});
+
+/// Expression - recursive tree structure with proper operator precedence
 #[derive(Clone, Debug)]
-pub struct Expr {
-    pub negated: bool,
-    pub terms: Vec<ExprTerm>,
-    pub operators: Vec<MathOp>,
+pub enum Expr {
+    Number(f64),
+    VarSubscripted(VarSubscripted),
+    FuncSum(Box<FuncSum>),
+    FuncMin(Box<FuncMin>),
+    FuncMax(Box<FuncMax>),
+    Conditional(Box<Conditional>),
+    UnaryNeg(Box<Expr>),
+    BinOp {
+        lhs: Box<Expr>,
+        op: MathOp,
+        rhs: Box<Expr>,
+    },
 }
 
 impl Expr {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
-        let mut negated = false;
-        let mut terms = Vec::new();
-        let mut operators = Vec::new();
-
-        // Check if first term is negative before consuming entry
-        let expr_str = entry.as_str().trim();
-        if expr_str.starts_with('-') {
-            negated = true;
-        }
-
-        for pair in entry.into_inner() {
-            match pair.as_rule() {
-                Rule::number => {
-                    let val = pair.as_str().parse().unwrap_or(0.0);
-                    terms.push(ExprTerm::Number(val));
-                }
-                Rule::var_subscripted => {
-                    terms.push(ExprTerm::VarSubscripted(VarSubscripted::from_entry(pair)))
-                }
-                Rule::func_sum => terms.push(ExprTerm::FuncSum(FuncSum::from_entry(pair))),
-                Rule::func_min => terms.push(ExprTerm::FuncMin(FuncMin::from_entry(pair))),
-                Rule::func_max => terms.push(ExprTerm::FuncMax(FuncMax::from_entry(pair))),
-                Rule::conditional => {
-                    terms.push(ExprTerm::Conditional(Conditional::from_entry(pair)))
-                }
-                Rule::expr => terms.push(ExprTerm::Expr(Box::new(Expr::from_entry(pair)))),
-                Rule::math_op => operators.push(MathOp::from_entry(pair)),
-                _ => {}
-            }
-        }
-
-        Self {
-            negated,
-            terms,
-            operators,
-        }
+        parse_expr(entry.into_inner())
     }
+}
+
+/// Parse expression using Pratt parser for correct precedence
+pub fn parse_expr(pairs: Pairs<Rule>) -> Expr {
+    PRATT_PARSER
+        .map_primary(|primary| match primary.as_rule() {
+            Rule::number => Expr::Number(primary.as_str().parse().unwrap_or(0.0)),
+            Rule::var_subscripted => Expr::VarSubscripted(VarSubscripted::from_entry(primary)),
+            Rule::func_min => Expr::FuncMin(Box::new(FuncMin::from_entry(primary))),
+            Rule::func_max => Expr::FuncMax(Box::new(FuncMax::from_entry(primary))),
+            Rule::conditional => Expr::Conditional(Box::new(Conditional::from_entry(primary))),
+            Rule::expr => parse_expr(primary.into_inner()),
+            rule => unreachable!("Expected primary, found {:?}", rule),
+        })
+        .map_prefix(|op, rhs| match op.as_rule() {
+            Rule::neg => Expr::UnaryNeg(Box::new(rhs)),
+            Rule::sum_prefix => {
+                // Extract domain from sum_prefix
+                let domain = op
+                    .into_inner()
+                    .find(|p| p.as_rule() == Rule::domain)
+                    .map(Domain::from_entry)
+                    .expect("sum_prefix must have domain");
+                Expr::FuncSum(Box::new(FuncSum {
+                    domain,
+                    operand: Box::new(rhs),
+                }))
+            }
+            rule => unreachable!("Expected prefix op, found {:?}", rule),
+        })
+        .map_infix(|lhs, op, rhs| {
+            let op = match op.as_rule() {
+                Rule::add => MathOp::Add,
+                Rule::sub => MathOp::Sub,
+                Rule::mul => MathOp::Mul,
+                Rule::div => MathOp::Div,
+                Rule::pow => MathOp::Pow,
+                rule => unreachable!("Expected infix op, found {:?}", rule),
+            };
+            Expr::BinOp {
+                lhs: Box::new(lhs),
+                op,
+                rhs: Box::new(rhs),
+            }
+        })
+        .parse(pairs)
 }
 
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "<expr>")
-    }
-}
-
-/// Expression term
-#[derive(Clone, Debug)]
-pub enum ExprTerm {
-    Number(f64),
-    VarSubscripted(VarSubscripted),
-    FuncSum(FuncSum),
-    FuncMin(FuncMin),
-    FuncMax(FuncMax),
-    Conditional(Conditional),
-    Expr(Box<Expr>),
-}
-
-impl fmt::Display for ExprTerm {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ExprTerm::Number(n) => write!(f, "{}", n),
-            ExprTerm::VarSubscripted(v) => write!(f, "{}", v),
-            ExprTerm::FuncSum(_) => write!(f, "<sum>"),
-            ExprTerm::FuncMin(_) => write!(f, "<min>"),
-            ExprTerm::FuncMax(_) => write!(f, "<max>"),
-            ExprTerm::Conditional(_) => write!(f, "<if-then-else>"),
-            ExprTerm::Expr(_) => write!(f, "(<expr>)"),
+            Expr::Number(n) => write!(f, "{}", n),
+            Expr::VarSubscripted(v) => write!(f, "{}", v),
+            Expr::FuncSum(func) => write!(f, "{}", **func),
+            Expr::FuncMin(func) => write!(f, "{}", **func),
+            Expr::FuncMax(func) => write!(f, "{}", **func),
+            Expr::Conditional(cond) => write!(f, "{}", **cond),
+            Expr::UnaryNeg(e) => write!(f, "-{}", **e),
+            Expr::BinOp { lhs, op, rhs } => write!(f, "({} {} {})", **lhs, op, **rhs),
         }
     }
 }
@@ -196,7 +211,7 @@ impl ExprOrLiteral {
 impl fmt::Display for ExprOrLiteral {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ExprOrLiteral::Expr(_) => write!(f, "<expr>"),
+            ExprOrLiteral::Expr(e) => write!(f, "{}", e),
             ExprOrLiteral::StringLiteral(s) => write!(f, "{}", s),
         }
     }
@@ -259,9 +274,9 @@ impl Conditional {
 
 impl fmt::Display for Conditional {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "if <condition> then <expr>")?;
-        if self.else_expr.is_some() {
-            write!(f, " else <expr>")?;
+        write!(f, "if {} then {}", self.condition, self.then_expr)?;
+        if let Some(else_expr) = &self.else_expr {
+            write!(f, " else {}", else_expr)?;
         }
         Ok(())
     }

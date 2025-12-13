@@ -1,13 +1,12 @@
 mod atoms;
 mod expr;
 
+pub use expr::{Conditional, Expr, ExprOrLiteral};
+
 use std::fmt;
 
 use crate::{
-    gmpl::{
-        atoms::{Domain, RelOp},
-        expr::{Expr, ExprOrLiteral},
-    },
+    gmpl::atoms::{Domain, RelOp},
     grammar::Rule,
 };
 use pest::iterators::Pair;

@@ -154,27 +154,31 @@ index_shift     =  { ("+" | "-") ~ "1" }
 
 // Expression
 // Bundled up with string_literal as often that is also allowed
-// Definitely not close to comprehensive
+// Uses Pratt parser for proper operator precedence
+// Precedence (lowest to highest): conditional, add/sub, sum/prod, mul/div, neg, pow
 // Example: Rate[r] * Ratio[r]
 expr_or_literal = _{ expr | string_literal }
-expr            =  { "-"? ~ term ~ (math_op ~ term)* }
-term            = _{ conditional | number | func | var_subscripted | "(" ~ expr ~ ")" }
+expr            =  { prefix* ~ primary ~ (infix ~ prefix* ~ primary)* }
+prefix          = _{ neg | sum_prefix }
+neg             =  { "-" }
+sum_prefix      =  { "sum" ~ domain }
+infix           = _{ add | sub | mul | div | pow }
+add             =  { "+" }
+sub             =  { "-" }
+mul             =  { "*" }
+div             =  { "/" }
+pow             =  { "^" }
+primary         = _{ conditional | number | func | var_subscripted | "(" ~ expr ~ ")" }
 conditional     =  { "if" ~ logic_expr ~ "then" ~ expr_or_literal ~ ("else" ~ expr_or_literal)? }
 
 // Function
-// GMPL supports more, just covering the basics
-func             = _{ func_min | func_max | func_sum }
+// min/max have special syntax: min{domain} min(var)
+// They should technically have the same priority as sum (prefix) but they're never used
+// like that so just leaving them as-is
+func             = _{ func_min | func_max }
 func_min         =  { "min" ~ domain ~ "min" ~ "(" ~ func_var ~ ")" }
 func_max         =  { "max" ~ domain ~ "max" ~ "(" ~ func_var ~ ")" }
-func_sum         =  { "sum" ~ domain ~ func_sum_operand }
-func_sum_operand =  { ("(" ~ expr ~ ")") | var_subscripted }
 func_var         = @{ id }
-
-// Basic operators
-math_op =  { add_op | mul_op | pow_op }
-add_op  = _{ "+" | "-" }
-mul_op  = _{ "*" | "/" }
-pow_op  = _{ "^" }
 bool                =  { "and" | "or" | "&&" | "||" }
 rel_op          =  { "<=" | "<>" | "<" | "==" | "=" | ">=" | ">" | "!=" }
 

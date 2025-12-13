@@ -314,65 +314,16 @@ impl fmt::Display for IndexShift {
     }
 }
 
-/// Sum function
+/// Sum function (iterated sum over a domain)
 #[derive(Clone, Debug)]
 pub struct FuncSum {
     pub domain: Domain,
-    pub operand: FuncSumOperand,
-}
-
-impl FuncSum {
-    pub fn from_entry(entry: Pair<Rule>) -> Self {
-        let mut domain = None;
-        let mut operand = None;
-
-        for pair in entry.into_inner() {
-            match pair.as_rule() {
-                Rule::domain => domain = Some(Domain::from_entry(pair)),
-                Rule::func_sum_operand => operand = Some(FuncSumOperand::from_entry(pair)),
-                _ => {}
-            }
-        }
-
-        Self {
-            domain: domain.unwrap(),
-            operand: operand.unwrap(),
-        }
-    }
+    pub operand: Box<Expr>,
 }
 
 impl fmt::Display for FuncSum {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "sum <domain> <operand>")
-    }
-}
-
-/// Sum function operand
-#[derive(Clone, Debug)]
-pub enum FuncSumOperand {
-    VarSubscripted(VarSubscripted),
-    Expr(Expr),
-}
-
-impl FuncSumOperand {
-    pub fn from_entry(entry: Pair<Rule>) -> Self {
-        let inner = entry.into_inner().next().unwrap();
-        match inner.as_rule() {
-            Rule::var_subscripted => {
-                FuncSumOperand::VarSubscripted(VarSubscripted::from_entry(inner))
-            }
-            Rule::expr => FuncSumOperand::Expr(Expr::from_entry(inner)),
-            _ => FuncSumOperand::Expr(Expr::from_entry(inner)),
-        }
-    }
-}
-
-impl fmt::Display for FuncSumOperand {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            FuncSumOperand::VarSubscripted(v) => write!(f, "{}", v),
-            FuncSumOperand::Expr(_) => write!(f, "(<expr>)"),
-        }
+        write!(f, "sum {} {}", self.domain, self.operand)
     }
 }
 
