@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::data::{Constraint, DataParam, DataSet, Entry, Objective, Param, Set, Var};
+use crate::gmpl::{Constraint, DataParam, DataSet, Entry, Objective, Param, Set, Var};
 
 /// A set declaration with optional data
 #[derive(Clone, Debug)]
@@ -40,7 +40,7 @@ impl fmt::Display for ParamWithData {
 /// Complete model with sorted and matched declarations
 #[derive(Clone, Debug)]
 pub struct ModelWithData {
-    pub objective: Option<Objective>,
+    pub objective: Objective,
     pub sets: Vec<SetWithData>,
     pub params: Vec<ParamWithData>,
     pub vars: Vec<Var>,
@@ -49,9 +49,7 @@ pub struct ModelWithData {
 
 impl fmt::Display for ModelWithData {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(obj) = &self.objective {
-            writeln!(f, "{}", obj)?;
-        }
+        writeln!(f, "{}", &self.objective)?;
 
         for set in &self.sets {
             writeln!(f, "{}", set)?;
@@ -170,7 +168,7 @@ impl ModelWithData {
         matched_params.sort_by(|a, b| a.decl.name.cmp(&b.decl.name));
 
         Ok(ModelWithData {
-            objective,
+            objective: objective.unwrap(),
             sets: matched_sets,
             params: matched_params,
             vars,

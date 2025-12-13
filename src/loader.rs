@@ -3,7 +3,7 @@ use pest::Parser;
 use pest::iterators::Pairs;
 
 use crate::{
-    data::{self, Entry},
+    gmpl::{self, Entry},
     grammar::{ModelParser, Rule},
 };
 
@@ -25,33 +25,33 @@ pub fn consume(entries: Pairs<'_, Rule>) -> Vec<Entry> {
             // Model rules
             Rule::VAR => {
                 debug!("VAR");
-                dirs.push(Entry::Var(data::Var::from_entry(entry)));
+                dirs.push(Entry::Var(gmpl::Var::from_entry(entry)));
             }
             Rule::PARAM => {
                 debug!("PARAM");
-                dirs.push(Entry::Param(data::Param::from_entry(entry)));
+                dirs.push(Entry::Param(gmpl::Param::from_entry(entry)));
             }
             Rule::SET => {
                 debug!("SET");
-                dirs.push(Entry::Set(data::Set::from_entry(entry)));
+                dirs.push(Entry::Set(gmpl::Set::from_entry(entry)));
             }
             Rule::OBJECTIVE => {
                 debug!("OBJ");
-                dirs.push(Entry::Objective(data::Objective::from_entry(entry)));
+                dirs.push(Entry::Objective(gmpl::Objective::from_entry(entry)));
             }
             Rule::CONSTRAINT => {
                 debug!("ST");
-                dirs.push(Entry::Constraint(data::Constraint::from_entry(entry)));
+                dirs.push(Entry::Constraint(gmpl::Constraint::from_entry(entry)));
             }
 
             // Data rules
             Rule::DATA_SET => {
                 debug!("DATA:SET");
-                dirs.push(Entry::DataSet(data::DataSet::from_entry(entry)));
+                dirs.push(Entry::DataSet(gmpl::DataSet::from_entry(entry)));
             }
             Rule::DATA_PARAM => {
                 debug!("DATA:PARAM");
-                dirs.push(Entry::DataParam(data::DataParam::from_entry(entry)));
+                dirs.push(Entry::DataParam(gmpl::DataParam::from_entry(entry)));
             }
 
             // Ignored

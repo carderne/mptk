@@ -4,13 +4,12 @@
 //!
 //! `mptk` is a GMPL parser and converter
 
-use crate::data::Entry;
+use crate::gmpl::Entry;
 
-mod data;
+mod gmpl;
 mod grammar;
 pub mod loader;
 pub mod model;
-pub mod utils;
 
 /// Loads the GMPL model file at `path` into an internal representation
 pub fn load_model(path: &str) -> Vec<Entry> {
