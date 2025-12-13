@@ -1,5 +1,3 @@
-// Pest grammar for GMPL linear programming language
-
 // The whole file must either succeed or fail
 root = {
     SOI
@@ -55,7 +53,9 @@ SET = { "set" ~ name ~ ";" }
 
 // Constraint
 // Example: s.t. Capacity{r in REGION}: NewCap[r] = 2
-CONSTRAINT      =  { constraint_kw ~ name ~ domain? ~ ":" ~ constraint_expr ~ (","? ~ constraint_expr)* ~ ";" }
+// Apparently multiple expressions are supported?
+// Osemosys doesn't use this
+CONSTRAINT      =  { constraint_kw ~ name ~ domain? ~ ":" ~ constraint_expr ~ ";" }
 constraint_expr =  { expr ~ rel_op ~ expr }
 constraint_kw   = _{ "subject to" | "subj to" | "s.t." } // can be omitted
 
@@ -106,14 +106,20 @@ value    = { id | number }
 
 // Data: Param
 DATA_PARAM          =  {
-    "param" ~ id ~ ("default" ~ param_data_default)? ~ ":="? ~ param_data_table* ~ ";"
+    "param" ~ id ~ ("default" ~ param_data_default)? ~ ":="? ~ param_data_body ~ ";"
 }
 param_data_default  = @{ number }
-param_data_table    =  { param_data_target? ~ ":" ~ param_data_cols ~ ":="? ~ param_data_row+ }
+param_data_body =      { param_data_matrix+ | param_data_list }
+// We don't support using "list" format for 2D params
+// As there's no way to unambiguously parse in PEST (needs post-processing)
+param_data_list     =  { param_data_pair+ }
+param_data_pair     =  { param_data_token ~ param_data_token }
+param_data_token    =  { id | number | "." }
+param_data_matrix   =  { param_data_target? ~ ":" ~ param_data_cols ~ ":="? ~ param_data_row+ }
 param_data_cols     =  { param_data_label+ }
 param_data_label    =  { id | number }
-param_data_row      = ${ param_data_label ~ param_data_row_vals ~ NEWLINE }
-param_data_row_vals = ${ ((" " | "\t") ~ param_data_val)+ }
+param_data_row      = ${ param_data_label ~ param_data_row_vals }
+param_data_row_vals = ${ ((" " | "\t")+ ~ param_data_val)+ }
 param_data_val      = @{ number }
 param_data_target   =  { "[" ~ (index_var | param_data_any) ~ ("," ~ (index_var | param_data_any))* ~ "]" }
 param_data_any      =  { "*" }
