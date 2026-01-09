@@ -101,8 +101,8 @@ data_entry = _{
 }
 
 // Data: Set
-DATA_SET = { "set" ~ name ~ ":="? ~ value+ ~ ";" }
-value    = { id | number }
+DATA_SET     = { "set" ~ name ~ ":="? ~ set_index+ ~ ";" }
+set_index    = { id | index_int }
 
 // Data: Param
 DATA_PARAM          =  {
@@ -114,12 +114,10 @@ param_data_body =      { param_data_scalar | param_data_matrix+ | param_data_lis
 // As there's no way to unambiguously parse in PEST (needs post-processing)
 param_data_scalar   = @{ number }
 param_data_list     =  { param_data_pair+ }
-param_data_pair     =  { param_data_token ~ number }
-param_data_token    =  { id | number | "." }
+param_data_pair     =  { set_index ~ number }
 param_data_matrix   =  { param_data_target? ~ ":" ~ param_data_cols ~ ":="? ~ param_data_row+ }
-param_data_cols     =  { param_data_label+ }
-param_data_label    =  { id | number }
-param_data_row      = ${ param_data_label ~ param_data_row_vals }
+param_data_cols     =  { set_index+ }
+param_data_row      = ${ set_index ~ param_data_row_vals }
 param_data_row_vals = ${ ((" " | "\t")+ ~ param_data_val)+ }
 param_data_val      = @{ number }
 param_data_target   =  { "[" ~ (index_var | param_data_any) ~ ("," ~ (index_var | param_data_any))* ~ "]" }
@@ -188,9 +186,10 @@ rel_op          =  { "<=" | "<>" | "<" | "==" | "=" | ">=" | ">" | "!=" }
 // //////////////////////
 
 // Primitives
-name   = @{ id }
-id     = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
-number = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+name      = @{ id }
+id        = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+number    = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+index_int = @{ ASCII_DIGIT+ }
 
 // String literal
 string_literal =  { single_quoted | double_quoted }

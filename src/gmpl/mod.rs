@@ -255,7 +255,7 @@ impl fmt::Display for Constraint {
 #[derive(Clone, Debug)]
 pub struct DataSet {
     pub name: String,
-    pub values: Vec<Value>,
+    pub values: Vec<SetIndex>,
 }
 
 impl DataSet {
@@ -266,7 +266,7 @@ impl DataSet {
         for pair in entry.into_inner() {
             match pair.as_rule() {
                 Rule::name => name = pair.as_str().to_string(),
-                Rule::value => values.push(Value::from_entry(pair)),
+                Rule::set_index => values.push(SetIndex::from_entry(pair)),
                 _ => {}
             }
         }
@@ -527,29 +527,29 @@ impl fmt::Display for ParamCondition {
     }
 }
 
-/// Value (identifier or number)
+/// Set index (identifier or positive integer)
 #[derive(Clone, Debug)]
-pub enum Value {
+pub enum SetIndex {
     Id(String),
-    Number(f64),
+    Int(u64),
 }
 
-impl Value {
+impl SetIndex {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
         let inner = entry.into_inner().next().unwrap();
         match inner.as_rule() {
-            Rule::id => Value::Id(inner.as_str().to_string()),
-            Rule::number => Value::Number(inner.as_str().parse().unwrap_or(0.0)),
-            _ => Value::Id(inner.as_str().to_string()),
+            Rule::id => SetIndex::Id(inner.as_str().to_string()),
+            Rule::index_int => SetIndex::Int(inner.as_str().parse().unwrap_or(0)),
+            _ => SetIndex::Id(inner.as_str().to_string()),
         }
     }
 }
 
-impl fmt::Display for Value {
+impl fmt::Display for SetIndex {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Value::Id(s) => write!(f, "{}", s),
-            Value::Number(n) => write!(f, "{}", n),
+            SetIndex::Id(s) => write!(f, "{}", s),
+            SetIndex::Int(n) => write!(f, "{}", n),
         }
     }
 }
@@ -585,7 +585,7 @@ impl ParamDataTable {
                 }
                 Rule::param_data_cols => {
                     for inner in pair.into_inner() {
-                        if inner.as_rule() == Rule::param_data_label {
+                        if inner.as_rule() == Rule::set_index {
                             cols.push(inner.as_str().to_string());
                         }
                     }
@@ -638,7 +638,7 @@ impl ParamDataRow {
 
         for pair in entry.into_inner() {
             match pair.as_rule() {
-                Rule::param_data_label => {
+                Rule::set_index => {
                     if label.is_empty() {
                         label = pair.as_str().to_string();
                     }
