@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use indexmap::IndexMap;
 
 use crate::gmpl::atoms::{BoolOp, Domain, RelOp, VarSubscripted};
-use crate::gmpl::{LogicExpr, ParamDataBody, SetIndex};
+use crate::gmpl::{LogicExpr, ParamDataBody, ParamDataTarget, SetIndex};
 use crate::model::ParamWithData;
 use crate::{
     gmpl::{Constraint, Expr, atoms::MathOp},
@@ -15,7 +15,11 @@ type SetMap = IndexMap<String, Vec<SetIndex>>;
 type SetValMap = HashMap<String, SetIndex>;
 type SetArr = Vec<Vec<SetIndex>>;
 type VarMap = HashMap<String, bool>;
-type ParamMap = HashMap<String, ParamArr>;
+type ParamMap = HashMap<String, ParamCont>;
+struct ParamCont {
+    data: ParamArr,
+    default: Option<Expr>,
+}
 enum ParamArr {
     Arr(HashMap<Vec<SetIndex>, f64>),
     Scalar(f64),
@@ -129,45 +133,78 @@ pub fn compile_mps(model: ModelWithData) {
     println!("ENDATA");
 }
 
-fn resolve_param(param: ParamWithData) -> ParamArr {
-    if let Some(data) = param.data {
-        if let Some(body) = data.body {
-            match body {
-                ParamDataBody::Num(num) => ParamArr::Scalar(num),
-                ParamDataBody::List(pairs) => {
-                    let mut arr: HashMap<Vec<SetIndex>, f64> = HashMap::new();
-                    for pair in pairs {
-                        arr.insert(vec![pair.key], pair.value);
-                    }
-                    return ParamArr::Arr(arr);
-                }
-                ParamDataBody::Tables(tables) => {
-                    let mut arr: HashMap<Vec<SetIndex>, f64> = HashMap::new();
-                    // TODO do something with paramdata.target
-                    for table in tables {
-                        for row in table.rows {
-                            for (col, value) in table.cols.iter().zip(row.values.iter()) {
-                                arr.insert(vec![row.label.clone(), col.clone()], *value);
-                            }
-                        }
-                    }
-                    return ParamArr::Arr(arr);
-                }
-            };
-        } else if let Some(default) = data.default {
-            return ParamArr::Scalar(default);
+fn resolve_param_default(param: &ParamWithData) -> Option<Expr> {
+    if let Some(data) = &param.data {
+        if let Some(default) = data.default {
+            return Some(Expr::Number(default));
         };
-    }
-
-    if let Some(expr) = param.decl.assign {
-        return ParamArr::Expr(expr);
-    } else if let Some(default) = param.decl.default {
-        return ParamArr::Expr(default);
+    } else if let Some(default) = &param.decl.default {
+        return Some(default.clone());
     };
 
-    println!("param not resolved: {}", param.decl.name.clone());
-    // No value was set, if we ever need this value it's an error
-    ParamArr::None
+    None
+}
+
+fn resolve_param(param: ParamWithData) -> ParamCont {
+    let default = resolve_param_default(&param);
+    if let Some(data) = param.data
+        && let Some(body) = data.body
+    {
+        match body {
+            ParamDataBody::Num(num) => ParamCont {
+                data: ParamArr::Scalar(num),
+                default,
+            },
+            ParamDataBody::List(pairs) => {
+                let mut arr: HashMap<Vec<SetIndex>, f64> = HashMap::new();
+                for pair in pairs {
+                    arr.insert(vec![pair.key], pair.value);
+                }
+                ParamCont {
+                    data: ParamArr::Arr(arr),
+                    default,
+                }
+            }
+            ParamDataBody::Tables(tables) => {
+                let mut arr: HashMap<Vec<SetIndex>, f64> = HashMap::new();
+                for table in tables {
+                    let target_idxs: Vec<SetIndex> = match table.target {
+                        Some(targets) => targets
+                            .iter()
+                            .filter_map(|t| match t {
+                                ParamDataTarget::IndexVar(idx) => Some(idx.clone()),
+                                ParamDataTarget::Any => None,
+                            })
+                            .collect(),
+                        None => vec![],
+                    };
+                    for row in table.rows {
+                        for (col, value) in table.cols.iter().zip(row.values.iter()) {
+                            arr.insert(
+                                [target_idxs.clone(), vec![row.label.clone(), col.clone()]]
+                                    .concat(),
+                                *value,
+                            );
+                        }
+                    }
+                }
+                ParamCont {
+                    data: ParamArr::Arr(arr),
+                    default,
+                }
+            }
+        }
+    } else if let Some(expr) = param.decl.assign {
+        ParamCont {
+            data: ParamArr::Expr(expr),
+            default,
+        }
+    } else {
+        ParamCont {
+            data: ParamArr::None,
+            default,
+        }
+    }
 }
 
 fn build_constraint(
@@ -194,12 +231,12 @@ fn build_constraint(
 
     let pairs = match lhs {
         RecurseResult::Pairs(pairs) => pairs,
-        _ => panic!("unhandled outer LHS"),
+        _ => panic!("unhandled outer LHS: {:?}", lhs),
     };
 
     let rhs = match rhs {
         RecurseResult::Number(num) => num,
-        _ => panic!("unhandled outer RHS"),
+        _ => panic!("unhandled outer RHS: {:?}", rhs),
     };
 
     BuiltConstraint {
@@ -245,22 +282,30 @@ fn recurse(
             }
 
             if let Some(param) = param_map.get(&name) {
-                return match param {
+                return match &param.data {
                     ParamArr::Scalar(num) => RecurseResult::Number(*num),
                     ParamArr::Arr(arr) => {
                         let arr_idx = concrete.expect("concrete is none");
-                        RecurseResult::Number(*arr.get(&arr_idx).unwrap_or_else(|| {
-                            dbg!("no param arr at: {} {}", &name, &arr_idx, &arr);
-                            panic!("no param arr");
-                        }))
+                        if let Some(arr_val) = arr.get(&arr_idx) {
+                            return RecurseResult::Number(*arr_val);
+                        } else {
+                            match &param.default {
+                                Some(expr) => {
+                                    recurse(expr.clone(), var_map, param_map, set_map, index)
+                                }
+                                None => panic!("tried to get uninitialized param: {}", &name),
+                            }
+                        }
                     }
                     ParamArr::Expr(expr) => {
                         recurse(expr.clone(), var_map, param_map, set_map, index)
                     }
-                    ParamArr::None => panic!("tried to get uninitialized param: {}", &name),
+                    ParamArr::None => match &param.default {
+                        Some(expr) => recurse(expr.clone(), var_map, param_map, set_map, index),
+                        None => panic!("tried to get uninitialized param: {}", &name),
+                    },
                 };
             }
-
             panic!("symbol {} does not point to a valid var or param", &name);
         }
         Expr::FuncSum(func) => {
@@ -286,6 +331,12 @@ fn recurse(
                 }
                 (RecurseResult::Number(l), RecurseResult::Number(r), MathOp::Sub) => {
                     RecurseResult::Number(l - r)
+                }
+                (RecurseResult::Number(l), RecurseResult::Number(r), MathOp::Mul) => {
+                    RecurseResult::Number(l * r)
+                }
+                (RecurseResult::Number(l), RecurseResult::Number(r), MathOp::Div) => {
+                    RecurseResult::Number(l / r)
                 }
                 (RecurseResult::Number(l), RecurseResult::Pairs(pairs), MathOp::Mul) => {
                     let res: Vec<Pair> = pairs

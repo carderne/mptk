@@ -572,7 +572,13 @@ impl ParamDataTable {
                     for inner in pair.into_inner() {
                         match inner.as_rule() {
                             Rule::index_var => {
-                                targets.push(ParamDataTarget::IndexVar(inner.as_str().to_string()))
+                                let raw = inner.as_str();
+                                let idx = raw
+                                    .parse::<u64>()
+                                    .map(SetIndex::Int)
+                                    .unwrap_or_else(|_| SetIndex::Str(raw.to_string()));
+
+                                targets.push(ParamDataTarget::IndexVar(idx))
                             }
                             Rule::param_data_any => targets.push(ParamDataTarget::Any),
                             _ => {}
@@ -613,7 +619,7 @@ impl fmt::Display for ParamDataTable {
 /// Parameter data target
 #[derive(Clone, Debug)]
 pub enum ParamDataTarget {
-    IndexVar(String),
+    IndexVar(SetIndex),
     Any,
 }
 
