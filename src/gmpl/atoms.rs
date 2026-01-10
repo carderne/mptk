@@ -191,6 +191,7 @@ impl fmt::Display for BoolOp {
 pub struct VarSubscripted {
     pub var: String,
     pub subscript: Option<Subscript>,
+    pub concrete: Option<Vec<String>>,
 }
 
 impl VarSubscripted {
@@ -206,7 +207,11 @@ impl VarSubscripted {
             }
         }
 
-        Self { var, subscript }
+        Self {
+            var,
+            subscript,
+            concrete: None,
+        }
     }
 }
 

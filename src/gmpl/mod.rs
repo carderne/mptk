@@ -289,14 +289,18 @@ impl fmt::Display for DataSet {
 /// Data parameter values
 #[derive(Clone, Debug)]
 pub struct ParamDataPair {
-    pub key: String,
+    pub key: SetIndex,
     pub value: f64,
 }
 
 impl ParamDataPair {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
         let mut tokens = entry.into_inner();
-        let key = tokens.next().unwrap().as_str().to_string();
+        let key = tokens.next().unwrap().as_str();
+        let key = key
+            .parse::<u64>()
+            .map(SetIndex::Int)
+            .unwrap_or_else(|_| SetIndex::Str(key.to_string()));
         let value = tokens.next().unwrap().as_str().parse().unwrap();
         Self { key, value }
     }
@@ -528,9 +532,9 @@ impl fmt::Display for ParamCondition {
 }
 
 /// Set index (identifier or positive integer)
-#[derive(Clone, Debug)]
+#[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub enum SetIndex {
-    Id(String),
+    Str(String),
     Int(u64),
 }
 
@@ -538,9 +542,9 @@ impl SetIndex {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
         let inner = entry.into_inner().next().unwrap();
         match inner.as_rule() {
-            Rule::id => SetIndex::Id(inner.as_str().to_string()),
+            Rule::id => SetIndex::Str(inner.as_str().to_string()),
             Rule::index_int => SetIndex::Int(inner.as_str().parse().unwrap_or(0)),
-            _ => SetIndex::Id(inner.as_str().to_string()),
+            _ => SetIndex::Str(inner.as_str().to_string()),
         }
     }
 }
@@ -548,7 +552,7 @@ impl SetIndex {
 impl fmt::Display for SetIndex {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            SetIndex::Id(s) => write!(f, "{}", s),
+            SetIndex::Str(s) => write!(f, "{}", s),
             SetIndex::Int(n) => write!(f, "{}", n),
         }
     }

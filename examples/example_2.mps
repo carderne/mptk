@@ -1,18 +1,14 @@
-NAME          example_2
+NAME example_2
 ROWS
- N  TOTAL_PROFIT
- L  CAPACITY
+ N total_profit
+ L capacity
 COLUMNS
-    PROD_A    TOTAL_PROFIT        50
-    PROD_A    CAPACITY             1
-    PROD_B    TOTAL_PROFIT        30
-    PROD_B    CAPACITY             1
-    PROD_C    TOTAL_PROFIT        40
-    PROD_C    CAPACITY             1
+ production[A] total_profit 50
+ production[A] capacity 1
+ production[B] total_profit 30
+ production[B] capacity 1
+ production[C] total_profit 40
+ production[C] capacity 1
 RHS
-    RHS1      CAPACITY          1000
-BOUNDS
- LO BND1      PROD_A               0
- LO BND1      PROD_B               0
- LO BND1      PROD_C               0
+ RHS1 capacity 1000
 ENDATA
