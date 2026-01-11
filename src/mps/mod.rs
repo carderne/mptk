@@ -69,17 +69,18 @@ pub fn compile_mps(model: ModelWithData) {
             &set_map,
             &idx_val_map,
         );
-        let pairs = match pairs {
-            RecurseResult::Pairs(pairs) => pairs,
-            _ => panic!("unhandled OBJ"),
-        };
         for pair in &pairs {
-            cols.entry((
-                pair.var.clone(),
-                pair.index.clone().unwrap_or_else(Vec::new),
-            ))
-            .or_default()
-            .insert((model.objective.name.clone(), vec![]), pair.coeff);
+            match pair {
+                Term::Num(_) => panic!("unhandled: objective function has a const in it"),
+                Term::Pair(pair) => {
+                    cols.entry((
+                        pair.var.clone(),
+                        pair.index.clone().unwrap_or_else(Vec::new),
+                    ))
+                    .or_default()
+                    .insert((model.objective.name.clone(), vec![]), pair.coeff);
+                }
+            }
         }
         rows.insert(
             (model.objective.name.clone(), vec![]),
@@ -89,6 +90,7 @@ pub fn compile_mps(model: ModelWithData) {
 
     // Then all the actual constraints
     for constraint in &model.constraints {
+        println!("{}", constraint.name);
         let con_indexes = domain_to_indexes(
             &constraint.domain,
             &var_map,
@@ -263,34 +265,11 @@ fn build_constraint(
         idx_val_map,
     );
 
-    match (lhs, rhs) {
-        (RecurseResult::Pairs(pairs), RecurseResult::Number(num)) => BuiltConstraint {
-            pairs,
-            rhs: Some(num),
-        },
-        (RecurseResult::Number(num), RecurseResult::Pairs(pairs)) => BuiltConstraint {
-            pairs,
-            rhs: Some(num),
-        },
-        (RecurseResult::Number(_), RecurseResult::Number(_)) => {
-            panic!("constraint has f64 on both sides: {}", &constraint.name)
-        }
-        (RecurseResult::Pairs(lhs), RecurseResult::Pairs(rhs)) => {
-            let rhs_neg: Vec<Pair> = rhs
-                .iter()
-                .map(|pair| Pair {
-                    var: pair.var.clone(),
-                    index: pair.index.clone(),
-                    coeff: -pair.coeff,
-                })
-                .collect();
+    let (pairs, rhs_total) = algebra(lhs, rhs);
 
-            let pairs = [lhs, rhs_neg].concat();
-            BuiltConstraint {
-                rhs: Some(0.0),
-                pairs,
-            }
-        }
+    BuiltConstraint {
+        rhs: Some(rhs_total),
+        pairs,
     }
 }
 
@@ -300,9 +279,9 @@ fn recurse(
     param_map: &ParamMap,
     set_map: &SetMap,
     idx_val_map: &IdxValMap,
-) -> RecurseResult {
+) -> Terms {
     match expr.clone() {
-        Expr::Number(num) => RecurseResult::Number(num),
+        Expr::Number(num) => vec![Term::Num(num)],
         Expr::VarSubscripted(var_or_param) => {
             let name = var_or_param.var.clone();
 
@@ -320,18 +299,18 @@ fn recurse(
             };
 
             if var_map.get(&name).is_some() {
-                RecurseResult::Pairs(vec![Pair {
+                vec![Term::Pair(Pair {
                     coeff: 1.0,
                     index: concrete,
                     var: name,
-                }])
+                })]
             } else if let Some(param) = param_map.get(&name) {
                 match &param.data {
-                    ParamArr::Scalar(num) => RecurseResult::Number(*num),
+                    ParamArr::Scalar(num) => vec![Term::Num(*num)],
                     ParamArr::Arr(arr) => {
                         let arr_idx = concrete.expect("concrete is none");
                         if let Some(arr_val) = arr.get(&arr_idx) {
-                            RecurseResult::Number(*arr_val)
+                            vec![Term::Num(*arr_val)]
                         } else {
                             match &param.default {
                                 Some(expr) => {
@@ -356,7 +335,7 @@ fn recurse(
                 // Mostly (only?) used in domain condition expressions
                 match index_val {
                     SetIndex::Str(_) => panic!("cannot use a string SetIndex here"),
-                    SetIndex::Int(num) => RecurseResult::Number(*num as f64),
+                    SetIndex::Int(num) => vec![Term::Num(*num as f64)],
                 }
             } else {
                 panic!(
@@ -372,73 +351,162 @@ fn recurse(
             let new_expr = expand_sum(&operand, &domain, var_map, param_map, set_map, idx_val_map);
             recurse(new_expr, var_map, param_map, set_map, idx_val_map)
         }
-        Expr::FuncMin(_) => panic!("not implemented: FuncMin"),
-        Expr::FuncMax(_) => panic!("not implemented: FuncMax"),
-        Expr::Conditional(_) => panic!("not implemented: Conditional"),
+        Expr::FuncMin(func) => {
+            // FuncMin looks like this:
+            // min{y in YEAR} min(y)
+            // Assumptions:
+            // - always only one dimension
+            // - always just getting the min of that set
+            let set_name = func.domain.parts.first().cloned();
+            match set_name {
+                Some(set_name) => {
+                    let min_val = set_map
+                        .get(&set_name.set)
+                        .unwrap()
+                        .iter()
+                        .map(|si| match si {
+                            SetIndex::Str(_) => panic!("cannot use func min on string index"),
+                            SetIndex::Int(num) => num,
+                        })
+                        .min()
+                        .unwrap();
+                    vec![Term::Num(*min_val as f64)]
+                }
+                None => panic!("no parts in funcMin domain"),
+            }
+        }
+        Expr::FuncMax(func) => {
+            let set_name = func.domain.parts.first().cloned();
+            match set_name {
+                Some(set_name) => {
+                    let max_val = set_map
+                        .get(&set_name.set)
+                        .unwrap()
+                        .iter()
+                        .map(|si| match si {
+                            SetIndex::Str(_) => panic!("cannot use func max on string index"),
+                            SetIndex::Int(num) => num,
+                        })
+                        .max()
+                        .unwrap();
+                    vec![Term::Num(*max_val as f64)]
+                }
+                None => panic!("no parts in func max domain"),
+            }
+        }
+        Expr::Conditional(conditional) => {
+            let expr = if check_domain_condition(
+                &conditional.condition,
+                var_map,
+                param_map,
+                set_map,
+                idx_val_map,
+            ) {
+                *conditional.then_expr
+            } else if let Some(otherwise) = conditional.else_expr {
+                *otherwise
+            } else {
+                Expr::Number(0.0)
+            };
+            recurse(expr, var_map, param_map, set_map, idx_val_map)
+        }
         Expr::UnaryNeg(_) => panic!("not implemented: UnaryNeg"),
         Expr::BinOp { lhs, op, rhs } => {
             let lhs = recurse(*lhs, var_map, param_map, set_map, idx_val_map);
             let rhs = recurse(*rhs, var_map, param_map, set_map, idx_val_map);
 
-            let debug_msg = format!("unhandled case: lhs:{:?} rhs:{:?} op:{}", &lhs, &rhs, op);
+            let lhs_num = resolve_terms_to_num(lhs.clone());
+            let rhs_num = resolve_terms_to_num(rhs.clone());
 
-            match (lhs, rhs, op) {
-                (RecurseResult::Number(l), RecurseResult::Number(r), MathOp::Add) => {
-                    RecurseResult::Number(l + r)
-                }
-                (RecurseResult::Number(l), RecurseResult::Number(r), MathOp::Sub) => {
-                    RecurseResult::Number(l - r)
-                }
-                (RecurseResult::Number(l), RecurseResult::Number(r), MathOp::Mul) => {
-                    RecurseResult::Number(l * r)
-                }
-                (RecurseResult::Number(l), RecurseResult::Number(r), MathOp::Div) => {
-                    RecurseResult::Number(l / r)
-                }
-                (RecurseResult::Number(num), RecurseResult::Pairs(pairs), MathOp::Mul) => {
-                    let res: Vec<Pair> = pairs
-                        .iter()
-                        .map(|p| Pair {
-                            coeff: num * p.coeff,
-                            index: p.index.clone(),
-                            var: p.var.clone(),
-                        })
-                        .collect();
-                    RecurseResult::Pairs(res)
-                }
-                (RecurseResult::Pairs(pairs), RecurseResult::Number(num), MathOp::Add) => {
-                    if num == 0.0 {
-                        RecurseResult::Pairs(pairs)
-                    } else {
-                        panic!("must handle adding const to pairs: {}", debug_msg);
+            match op {
+                MathOp::Add => match (lhs_num, rhs_num) {
+                    (Some(lhs), Some(rhs)) => vec![Term::Num(lhs + rhs)],
+                    _ => [lhs, rhs].concat(),
+                },
+                MathOp::Sub => match (lhs_num, rhs_num) {
+                    (Some(lhs), Some(rhs)) => vec![Term::Num(lhs - rhs)],
+                    (None, None) => {
+                        let rhs_pairs: Vec<Pair> = rhs
+                            .clone()
+                            .into_iter()
+                            .filter_map(|p| if let Term::Pair(n) = p { Some(n) } else { None })
+                            .collect();
+
+                        let rhs_pairs_neg: Vec<Term> = rhs_pairs
+                            .iter()
+                            .map(|pair| {
+                                Term::Pair(Pair {
+                                    var: pair.var.clone(),
+                                    index: pair.index.clone(),
+                                    coeff: -pair.coeff,
+                                })
+                            })
+                            .collect();
+                        [lhs, rhs_pairs_neg].concat()
                     }
-                }
-                (RecurseResult::Pairs(l_pairs), RecurseResult::Pairs(r_pairs), MathOp::Add) => {
-                    RecurseResult::Pairs([l_pairs, r_pairs].concat())
-                }
-                _ => unreachable!("{}", debug_msg),
+                    _ => panic!("no vars allowed in expr sub"),
+                },
+                MathOp::Mul => match (lhs_num, rhs_num) {
+                    (Some(lhs), Some(rhs)) => vec![Term::Num(lhs * rhs)],
+                    (Some(num), None) | (None, Some(num)) => {
+                        let terms = if lhs_num.is_some() { &rhs } else { &lhs };
+                        terms
+                            .iter()
+                            .map(|p| match p {
+                                Term::Num(inner) => Term::Num(inner * num),
+                                Term::Pair(pair) => Term::Pair(Pair {
+                                    coeff: pair.coeff * num,
+                                    index: pair.index.clone(),
+                                    var: pair.var.clone(),
+                                }),
+                            })
+                            .collect()
+                    }
+                    _ => panic!("no vars allowed in expr mul"),
+                },
+                MathOp::Div => match (lhs_num, rhs_num) {
+                    (Some(lhs), Some(rhs)) => vec![Term::Num(lhs / rhs)],
+                    (None, Some(num)) => lhs
+                        .iter()
+                        .map(|p| match p {
+                            Term::Num(inner) => Term::Num(inner / num),
+                            Term::Pair(pair) => Term::Pair(Pair {
+                                coeff: pair.coeff / num,
+                                index: pair.index.clone(),
+                                var: pair.var.clone(),
+                            }),
+                        })
+                        .collect(),
+                    _ => panic!("no vars allowed in expr div"),
+                },
+                MathOp::Pow => match (lhs_num, rhs_num) {
+                    (Some(lhs), Some(rhs)) => vec![Term::Num(lhs.powf(rhs))],
+                    _ => panic!("no vars allowed in expr pow"),
+                },
             }
         }
     }
 }
 
 // Structs
-pub struct BuiltConstraint {
+struct BuiltConstraint {
     rhs: Option<f64>,
     pairs: Vec<Pair>,
 }
 
 #[derive(Clone, Debug)]
-pub struct Pair {
+struct Pair {
     var: String,
     index: Option<Vec<SetIndex>>,
     coeff: f64,
 }
 
+type Terms = Vec<Term>;
+
 #[derive(Clone, Debug)]
-pub enum RecurseResult {
-    Number(f64),
-    Pairs(Vec<Pair>),
+enum Term {
+    Num(f64),
+    Pair(Pair),
 }
 
 // Utils
@@ -591,14 +659,21 @@ fn check_domain_condition(
             let lhs = recurse(lhs.clone(), var_map, param_map, set_map, idx_val_map);
             let rhs = recurse(rhs.clone(), var_map, param_map, set_map, idx_val_map);
 
-            match (lhs, rhs, op) {
-                (RecurseResult::Number(lhs), RecurseResult::Number(rhs), RelOp::Eq) => lhs == rhs,
-                (RecurseResult::Number(lhs), RecurseResult::Number(rhs), RelOp::Ne) => lhs != rhs,
-                (RecurseResult::Number(lhs), RecurseResult::Number(rhs), RelOp::Gt) => lhs >= rhs,
-                (RecurseResult::Number(lhs), RecurseResult::Number(rhs), RelOp::Ge) => lhs >= rhs,
-                (RecurseResult::Number(lhs), RecurseResult::Number(rhs), RelOp::Lt) => lhs <= rhs,
-                (RecurseResult::Number(lhs), RecurseResult::Number(rhs), RelOp::Le) => lhs <= rhs,
-                _ => panic!("unhandled logic expr: {}", logic),
+            // no algebra allowed here!
+            let lhs_num = resolve_terms_to_num(lhs);
+            let rhs_num = resolve_terms_to_num(rhs);
+
+            match (lhs_num, rhs_num) {
+                (Some(lhs), Some(rhs)) => match op {
+                    RelOp::Eq => lhs == rhs,
+                    RelOp::Ne => lhs != rhs,
+                    RelOp::Gt => lhs >= rhs,
+                    RelOp::Ge => lhs >= rhs,
+                    RelOp::Lt => lhs <= rhs,
+                    RelOp::Le => lhs <= rhs,
+                    _ => panic!("unhandled logic expr: {}", logic),
+                },
+                _ => panic!("no vars allowed in domain conditions"),
             }
         }
         LogicExpr::BoolOp { lhs, op, rhs } => {
@@ -680,4 +755,50 @@ fn substitute_vars(expr: &Expr, con_index_vals: &IdxValMap) -> Expr {
         Expr::UnaryNeg(inner) => Expr::UnaryNeg(Box::new(substitute_vars(inner, con_index_vals))),
         _ => todo!("handle other variants"),
     }
+}
+
+fn resolve_terms_to_num(terms: Vec<Term>) -> Option<f64> {
+    terms.into_iter().try_fold(0.0, |acc, t| match t {
+        Term::Num(num) => Some(acc + num),
+        Term::Pair(_) => None,
+    })
+}
+
+fn algebra(lhs: Vec<Term>, rhs: Vec<Term>) -> (Vec<Pair>, f64) {
+    let lhs_nums: Vec<f64> = lhs
+        .clone()
+        .into_iter()
+        .filter_map(|p| if let Term::Num(n) = p { Some(n) } else { None })
+        .collect();
+    let rhs_nums: Vec<f64> = rhs
+        .clone()
+        .into_iter()
+        .filter_map(|p| if let Term::Num(n) = p { Some(n) } else { None })
+        .collect();
+
+    let lhs_pairs: Vec<Pair> = lhs
+        .clone()
+        .into_iter()
+        .filter_map(|p| if let Term::Pair(n) = p { Some(n) } else { None })
+        .collect();
+    let rhs_pairs: Vec<Pair> = rhs
+        .clone()
+        .into_iter()
+        .filter_map(|p| if let Term::Pair(n) = p { Some(n) } else { None })
+        .collect();
+
+    let rhs_pairs_neg: Vec<Pair> = rhs_pairs
+        .iter()
+        .map(|pair| Pair {
+            var: pair.var.clone(),
+            index: pair.index.clone(),
+            coeff: -pair.coeff,
+        })
+        .collect();
+
+    let lhs_nums_neg: Vec<f64> = lhs_nums.into_iter().map(|n| -n).collect();
+
+    let rhs_total: f64 = [rhs_nums, lhs_nums_neg].into_iter().flatten().sum();
+    let pairs = [lhs_pairs, rhs_pairs_neg].concat();
+    (pairs, rhs_total)
 }
