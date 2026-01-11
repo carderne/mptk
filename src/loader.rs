@@ -9,7 +9,6 @@ use crate::{
 
 /// Parse the text using Pest
 pub fn parse(data: &str) -> Pairs<'_, Rule> {
-    // TODO handle error
     let mut entries = ModelParser::parse(Rule::root, data).unwrap();
 
     // There will always be at least an "EOI", so this will not error

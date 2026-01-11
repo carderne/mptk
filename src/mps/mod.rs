@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use indexmap::IndexMap;
 
 use crate::gmpl::atoms::{BoolOp, Domain, RelOp, VarSubscripted};
-use crate::gmpl::{LogicExpr, ParamDataBody, ParamDataTarget, SetIndex};
+use crate::gmpl::{LogicExpr, ParamDataBody, ParamDataTarget, SetIndex, VarBounds};
 use crate::model::ParamWithData;
 use crate::{
     gmpl::{Constraint, Expr, atoms::MathOp},
@@ -90,7 +90,7 @@ pub fn compile_mps(model: ModelWithData) {
 
     // Then all the actual constraints
     for constraint in &model.constraints {
-        println!("{}", constraint.name);
+        dbg!(&constraint.name);
         let con_indexes = domain_to_indexes(
             &constraint.domain,
             &var_map,
@@ -410,7 +410,7 @@ fn recurse(
             };
             recurse(expr, var_map, param_map, set_map, idx_val_map)
         }
-        Expr::UnaryNeg(_) => panic!("not implemented: UnaryNeg"),
+        Expr::UnaryNeg(inner) => recurse(*inner, var_map, param_map, set_map, idx_val_map),
         Expr::BinOp { lhs, op, rhs } => {
             let lhs = recurse(*lhs, var_map, param_map, set_map, idx_val_map);
             let rhs = recurse(*rhs, var_map, param_map, set_map, idx_val_map);
@@ -444,6 +444,17 @@ fn recurse(
                             .collect();
                         [lhs, rhs_pairs_neg].concat()
                     }
+                    (None, Some(num)) => lhs
+                        .iter()
+                        .map(|p| match p {
+                            Term::Num(inner) => Term::Num(inner - num),
+                            Term::Pair(pair) => Term::Pair(Pair {
+                                coeff: pair.coeff - num,
+                                index: pair.index.clone(),
+                                var: pair.var.clone(),
+                            }),
+                        })
+                        .collect(),
                     _ => panic!("no vars allowed in expr sub"),
                 },
                 MathOp::Mul => match (lhs_num, rhs_num) {
@@ -576,16 +587,25 @@ fn print_bounds(model: &ModelWithData, var_map: &VarMap, param_map: &ParamMap, s
     println!("BOUNDS");
 
     for var in &model.vars {
-        if let Some(bounds) = var.bounds.clone() {
-            let indexes =
-                domain_to_indexes(&var.domain, var_map, param_map, set_map, &HashMap::new());
-            let dir = rel_op_to_bounds(&bounds.op);
-            let name = var.name.clone();
-            let val = bounds.value;
-            for index in indexes {
-                let si = format_set_index(&index);
-                println!(" {} BND1     {}{}         {}", dir, name, si, val);
-            }
+        if matches!(&var.bounds, Some(VarBounds { op: RelOp::Ge, value }) if *value == 0.0) {
+            // exclude vars with >= 0, as that is default in MPS
+            continue;
+        }
+
+        let (dir, val) = match &var.bounds {
+            Some(b) => (rel_op_to_bounds(&b.op), b.value.to_string()),
+            None => ("FR".to_string(), String::new()),
+        };
+
+        let indexes = domain_to_indexes(&var.domain, var_map, param_map, set_map, &HashMap::new());
+        for index in &indexes {
+            println!(
+                " {} BND1     {}{}         {}",
+                dir,
+                var.name,
+                format_set_index(index),
+                val
+            );
         }
     }
 }
@@ -753,7 +773,7 @@ fn substitute_vars(expr: &Expr, con_index_vals: &IdxValMap) -> Expr {
         },
         Expr::Number(n) => Expr::Number(*n),
         Expr::UnaryNeg(inner) => Expr::UnaryNeg(Box::new(substitute_vars(inner, con_index_vals))),
-        _ => todo!("handle other variants"),
+        _ => panic!("expr not supported in substition: {}", &expr),
     }
 }
 
