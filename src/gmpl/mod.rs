@@ -542,6 +542,23 @@ impl SetIndex {
     }
 }
 
+impl Ord for SetIndex {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (self, other) {
+            (SetIndex::Int(a), SetIndex::Int(b)) => a.cmp(b),
+            (SetIndex::Str(a), SetIndex::Str(b)) => a.cmp(b),
+            (SetIndex::Int(_), SetIndex::Str(_)) => std::cmp::Ordering::Less,
+            (SetIndex::Str(_), SetIndex::Int(_)) => std::cmp::Ordering::Greater,
+        }
+    }
+}
+
+impl PartialOrd for SetIndex {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 impl fmt::Display for SetIndex {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {

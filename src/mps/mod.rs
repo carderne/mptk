@@ -287,7 +287,7 @@ fn recurse(
 
             let concrete: Option<Vec<SetIndex>> = if let Some(c) = var_or_param.concrete {
                 // Already resolved by sum expansion
-                Some(c.iter().map(|s| SetIndex::Str(s.clone())).collect())
+                Some(c)
             } else {
                 var_or_param.subscript.as_ref().map(|subscript| {
                     subscript
@@ -561,9 +561,9 @@ fn print_rows(rows: &RowMap) {
 
 fn print_cols(cols: Cols) {
     println!("COLUMNS");
-    for ((var_name, set_index), con_map) in cols {
+    for ((var_name, var_index), con_map) in cols {
         for ((con_name, con_index), val) in con_map {
-            let var_idx = format_set_index(&set_index);
+            let var_idx = format_set_index(&var_index);
             let con_idx = format_set_index(&con_index);
             println!(
                 "    {}{}      {}{}         {}",
@@ -748,12 +748,11 @@ fn substitute_vars(expr: &Expr, con_index_vals: &IdxValMap) -> Expr {
     match expr {
         Expr::VarSubscripted(vs) => {
             if let Some(subscript) = &vs.subscript {
-                let concrete: Vec<String> = subscript
+                let concrete: Vec<SetIndex> = subscript
                     .indices
                     .iter()
                     .map(|i| match con_index_vals.get(&i.var) {
-                        Some(SetIndex::Str(s)) => s.clone(),
-                        Some(SetIndex::Int(n)) => n.to_string(),
+                        Some(s) => s.clone(),
                         None => panic!("unbound variable: {}", i.var),
                     })
                     .collect();
