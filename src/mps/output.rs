@@ -24,12 +24,14 @@ fn print_cols(cols: Cols) {
     println!("COLUMNS");
     for ((var_name, var_index), con_map) in cols {
         for ((con_name, con_index), val) in con_map {
-            let var_idx = format_index_vals(&var_index);
-            let con_idx = format_index_vals(&con_index);
-            println!(
-                "    {}{}      {}{}         {}",
-                var_name, var_idx, con_name, con_idx, val
-            );
+            if val != 0.0 {
+                let var_idx = format_index_vals(&var_index);
+                let con_idx = format_index_vals(&con_index);
+                println!(
+                    "    {}{}      {}{}         {}",
+                    var_name, var_idx, con_name, con_idx, val
+                );
+            }
         }
     }
 }
@@ -37,7 +39,11 @@ fn print_cols(cols: Cols) {
 fn print_rhs(rows: &Rows) {
     println!("RHS");
     for ((name, idx), (_, val)) in rows {
-        if let Some(num) = val {
+        // MPS format assumes RHS is 0 if not provided
+        // NB: -0 and +0 are different values
+        if let Some(num) = val
+            && *num != 0.0
+        {
             let idx = format_index_vals(idx);
             println!("    RHS1      {name}{idx}       {num}");
         }

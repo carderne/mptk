@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::gmpl::atoms::{BoolOp, Domain, RelOp, VarSubscripted};
+use crate::gmpl::atoms::{BoolOp, Domain, IndexShift, RelOp, VarSubscripted};
 use crate::gmpl::{Constraint, Expr, atoms::MathOp};
 use crate::gmpl::{IndexVal, LogicExpr};
 use crate::mps::lookups::Lookups;
@@ -36,6 +36,7 @@ pub fn build_constraint(
 ) -> BuiltConstraint {
     let lhs = recurse(constraint.constraint_expr.lhs.clone(), lookups, idx_val_map);
     let rhs = recurse(constraint.constraint_expr.rhs.clone(), lookups, idx_val_map);
+
     let (pairs, rhs_total) = algebra(lhs, rhs);
     BuiltConstraint {
         rhs: Some(rhs_total),
@@ -57,7 +58,21 @@ pub fn recurse(expr: Expr, lookups: &Lookups, idx_val_map: &IdxValMap) -> Vec<Te
                     subscript
                         .indices
                         .iter()
-                        .map(|i| idx_val_map.get(&i.var).unwrap().clone())
+                        .map(|i| {
+                            let index_val = idx_val_map.get(&i.var).unwrap().clone();
+                            match &i.shift {
+                                Some(shift) => match index_val {
+                                    IndexVal::Str(_) => {
+                                        panic!("tried to index shift on string index val")
+                                    }
+                                    IndexVal::Int(index_num) => match shift {
+                                        IndexShift::Plus => IndexVal::Int(index_num + 1),
+                                        IndexShift::Minus => IndexVal::Int(index_num - 1),
+                                    },
+                                },
+                                None => index_val,
+                            }
+                        })
                         .collect()
                 })
             };
@@ -82,7 +97,10 @@ pub fn recurse(expr: Expr, lookups: &Lookups, idx_val_map: &IdxValMap) -> Vec<Te
                             }
                         }
                     }
-                    ParamArr::Expr(expr) => recurse(expr.clone(), lookups, idx_val_map),
+                    ParamArr::Expr(expr) => {
+                        let res = recurse(expr.clone(), lookups, idx_val_map);
+                        res
+                    }
                     ParamArr::None => match &param.default {
                         Some(expr) => recurse(expr.clone(), lookups, idx_val_map),
                         None => panic!("tried to get uninitialized param: {}", &name),
@@ -164,7 +182,20 @@ pub fn recurse(expr: Expr, lookups: &Lookups, idx_val_map: &IdxValMap) -> Vec<Te
             };
             recurse(expr, lookups, idx_val_map)
         }
-        Expr::UnaryNeg(inner) => recurse(*inner, lookups, idx_val_map),
+        Expr::UnaryNeg(inner) => {
+            let terms = recurse(*inner, lookups, idx_val_map);
+            terms
+                .into_iter()
+                .map(|t| match t {
+                    Term::Num(n) => Term::Num(-n),
+                    Term::Pair(p) => Term::Pair(Pair {
+                        coeff: -p.coeff,
+                        var: p.var,
+                        index: p.index,
+                    }),
+                })
+                .collect()
+        }
         Expr::BinOp { lhs, op, rhs } => {
             let lhs = recurse(*lhs, lookups, idx_val_map);
             let rhs = recurse(*rhs, lookups, idx_val_map);
@@ -361,9 +392,9 @@ fn check_domain_condition(logic: &LogicExpr, lookups: &Lookups, idx_val_map: &Id
                 (Some(lhs), Some(rhs)) => match op {
                     RelOp::Eq => lhs == rhs,
                     RelOp::Ne => lhs != rhs,
-                    RelOp::Gt => lhs >= rhs,
+                    RelOp::Gt => lhs > rhs,
                     RelOp::Ge => lhs >= rhs,
-                    RelOp::Lt => lhs <= rhs,
+                    RelOp::Lt => lhs < rhs,
                     RelOp::Le => lhs <= rhs,
                     _ => panic!("unhandled logic expr: {}", logic),
                 },
@@ -418,7 +449,21 @@ fn substitute_vars(expr: &Expr, con_index_vals: &IdxValMap) -> Expr {
                     .indices
                     .iter()
                     .map(|i| match con_index_vals.get(&i.var) {
-                        Some(s) => s.clone(),
+                        Some(s) => {
+                            let index_val = s.clone();
+                            match &i.shift {
+                                Some(shift) => match index_val {
+                                    IndexVal::Str(_) => {
+                                        panic!("tried to index shift on string index val")
+                                    }
+                                    IndexVal::Int(index_num) => match shift {
+                                        IndexShift::Plus => IndexVal::Int(index_num + 1),
+                                        IndexShift::Minus => IndexVal::Int(index_num - 1),
+                                    },
+                                },
+                                None => index_val,
+                            }
+                        }
                         None => panic!("unbound variable: {}", i.var),
                     })
                     .collect();
