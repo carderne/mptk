@@ -110,7 +110,7 @@ data_entry = _{
 }
 
 // Data: Set
-DATA_SET   = { "set" ~ id ~ set_index? ~ (":=" ~ set_assign)? ~ ";" }
+DATA_SET   = { "set" ~ id ~ set_index? ~ (":=" ~ set_assign?)? ~ ";" }
 set_assign = { set_vals | set_tuples }
 set_tuples = { set_tuple+ }
 set_tuple  = { "(" ~ set_val ~ "," ~ set_val ~ ")" }
@@ -204,10 +204,10 @@ rel_op           =  { "<=" | "<>" | "<" | "==" | "=" | ">=" | ">" | "!=" }
 // //////////////////////
 
 // Primitives
-name      = @{ id }
-id        = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
-number    = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
-int       = @{ ASCII_DIGIT+ }
+name       = @{ id }
+id         = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+number     = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? ~ (("e" | "E") ~ ("+" | "-")? ~ ASCII_DIGIT+)? }
+int        = @{ ASCII_DIGIT+ }
 
 // String literal
 string_literal =  { single_quoted | double_quoted }
