@@ -5,7 +5,10 @@ use std::fmt;
 
 use pest::iterators::Pair;
 
-use crate::{gmpl::atoms::VarSubscripted, grammar::Rule};
+use crate::{
+    gmpl::atoms::{Index, SetVal, SetValTerminal, SetVals, VarSubscripted},
+    grammar::Rule,
+};
 pub use atoms::{Domain, RelOp};
 pub use expr::{Expr, LogicExpr};
 
@@ -341,13 +344,13 @@ impl fmt::Display for Constraint {
 
 /// Data set values
 #[derive(Clone, Debug)]
-pub struct DataSet {
+pub struct SetData {
     pub name: String,
-    pub index: Vec<SetVal>,
-    pub values: Vec<SetVal>,
+    pub index: Index,
+    pub values: SetVals,
 }
 
-impl DataSet {
+impl SetData {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
         let mut name = String::new();
         let mut index = Vec::new();
@@ -356,20 +359,10 @@ impl DataSet {
         for pair in entry.into_inner() {
             match pair.as_rule() {
                 Rule::id => name = pair.as_str().to_string(),
-                Rule::set_index => {
+                Rule::index => {
                     for inner in pair.into_inner() {
-                        if inner.as_rule() == Rule::index {
-                            // Extract the index_var from each index
-                            for idx_part in inner.into_inner() {
-                                if idx_part.as_rule() == Rule::index_var {
-                                    let raw = idx_part.as_str();
-                                    let val = raw
-                                        .parse::<u64>()
-                                        .map(SetVal::Int)
-                                        .unwrap_or_else(|_| SetVal::Str(raw.to_string()));
-                                    index.push(val);
-                                }
-                            }
+                        if inner.as_rule() == Rule::set_val {
+                            index.push(SetVal::from_entry(inner));
                         }
                     }
                 }
@@ -420,13 +413,13 @@ impl DataSet {
 
         Self {
             name,
-            index,
-            values,
+            index: Index(index),
+            values: SetVals(values),
         }
     }
 }
 
-impl fmt::Display for DataSet {
+impl fmt::Display for SetData {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -465,13 +458,13 @@ pub enum ParamDataBody {
 }
 
 #[derive(Clone, Debug)]
-pub struct DataParam {
+pub struct ParamData {
     pub name: String,
     pub default: Option<f64>,
     pub body: Option<ParamDataBody>,
 }
 
-impl DataParam {
+impl ParamData {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
         let mut name = String::new();
         let mut default = None;
@@ -514,7 +507,7 @@ impl DataParam {
     }
 }
 
-impl fmt::Display for DataParam {
+impl fmt::Display for ParamData {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "data: param {}", self.name)?;
         if self.default.is_some() {
@@ -679,53 +672,6 @@ impl fmt::Display for ParamCondition {
     }
 }
 
-/// Set val (identifier or positive integer)
-#[derive(Hash, Eq, PartialEq, Clone, Debug)]
-pub enum SetVal {
-    Str(String),
-    Int(u64),
-    Vec(Vec<SetValTerminal>),
-}
-
-#[derive(Hash, Eq, PartialEq, Clone, Debug)]
-pub enum SetValTerminal {
-    Str(String),
-    Int(u64),
-}
-
-impl SetVal {
-    pub fn from_entry(entry: Pair<Rule>) -> Self {
-        let inner = entry.into_inner().next().unwrap();
-        match inner.as_rule() {
-            Rule::id => SetVal::Str(inner.as_str().to_string()),
-            Rule::int => SetVal::Int(inner.as_str().parse().unwrap_or(0)),
-            _ => SetVal::Str(inner.as_str().to_string()),
-        }
-    }
-}
-
-impl fmt::Display for SetVal {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            SetVal::Str(s) => write!(f, "{}", s),
-            SetVal::Int(n) => write!(f, "{}", n),
-            SetVal::Vec(v) => {
-                let items: Vec<String> = v.iter().map(|s| s.to_string()).collect();
-                write!(f, "{}", items.join(","))
-            }
-        }
-    }
-}
-
-impl fmt::Display for SetValTerminal {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            SetValTerminal::Str(s) => write!(f, "{}", s),
-            SetValTerminal::Int(n) => write!(f, "{}", n),
-        }
-    }
-}
-
 /// Parameter data table
 #[derive(Clone, Debug)]
 pub struct ParamDataTable {
@@ -746,14 +692,8 @@ impl ParamDataTable {
                     let mut targets = Vec::new();
                     for inner in pair.into_inner() {
                         match inner.as_rule() {
-                            Rule::index_var => {
-                                let raw = inner.as_str();
-                                let idx = raw
-                                    .parse::<u64>()
-                                    .map(SetVal::Int)
-                                    .unwrap_or_else(|_| SetVal::Str(raw.to_string()));
-
-                                targets.push(ParamDataTarget::IndexVar(idx))
+                            Rule::set_val => {
+                                targets.push(ParamDataTarget::IndexVar(SetVal::from_entry(inner)))
                             }
                             Rule::param_data_any => targets.push(ParamDataTarget::Any),
                             _ => {}
@@ -868,8 +808,8 @@ pub enum Entry {
     Set(Set),
     Objective(Objective),
     Constraint(Constraint),
-    DataSet(DataSet),
-    DataParam(DataParam),
+    DataSet(SetData),
+    DataParam(ParamData),
 }
 
 impl fmt::Display for Entry {

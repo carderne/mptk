@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::gmpl::{Constraint, DataParam, DataSet, Entry, Objective, Param, Set, Var};
+use crate::gmpl::{Constraint, Entry, Objective, Param, ParamData, Set, SetData, Var};
 
 /// A set declaration with optional data
 #[derive(Clone, Debug)]
 pub struct SetWithData {
     pub decl: Set,
-    pub data: Vec<DataSet>,
+    pub data: Vec<SetData>,
 }
 
 impl fmt::Display for SetWithData {
@@ -24,7 +24,7 @@ impl fmt::Display for SetWithData {
 #[derive(Clone, Debug)]
 pub struct ParamWithData {
     pub decl: Param,
-    pub data: Option<DataParam>,
+    pub data: Option<ParamData>,
 }
 
 impl fmt::Display for ParamWithData {
@@ -100,7 +100,7 @@ impl ModelWithData {
         }
 
         // Group data sets by name
-        let mut data_set_map: HashMap<String, Vec<DataSet>> = HashMap::new();
+        let mut data_set_map: HashMap<String, Vec<SetData>> = HashMap::new();
         for data_set in data_sets {
             data_set_map
                 .entry(data_set.name.clone())

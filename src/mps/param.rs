@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
 use crate::gmpl::Expr;
-use crate::gmpl::{ParamDataBody, ParamDataTarget, SetVal};
+use crate::gmpl::atoms::{Index, SetVal};
+use crate::gmpl::{ParamDataBody, ParamDataTarget};
 use crate::model::ParamWithData;
 
 pub struct Param {
@@ -9,7 +10,7 @@ pub struct Param {
     pub default: Option<Expr>,
 }
 pub enum ParamVal {
-    Arr(HashMap<Vec<SetVal>, f64>),
+    Arr(HashMap<Index, f64>),
     Scalar(f64),
     Expr(Expr),
     None,
@@ -26,9 +27,9 @@ pub fn resolve_param(param: ParamWithData) -> Param {
                 default,
             },
             ParamDataBody::List(pairs) => {
-                let mut arr: HashMap<Vec<SetVal>, f64> = HashMap::new();
+                let mut arr: HashMap<Index, f64> = HashMap::new();
                 for pair in pairs {
-                    arr.insert(vec![pair.key], pair.value);
+                    arr.insert(vec![pair.key].into(), pair.value);
                 }
                 Param {
                     data: ParamVal::Arr(arr),
@@ -36,7 +37,7 @@ pub fn resolve_param(param: ParamWithData) -> Param {
                 }
             }
             ParamDataBody::Tables(tables) => {
-                let mut arr: HashMap<Vec<SetVal>, f64> = HashMap::new();
+                let mut arr: HashMap<Index, f64> = HashMap::new();
                 for table in tables {
                     // Expressions like:
                     // [Atlantis_00A,NGCC,NOx,*,*]:
@@ -57,7 +58,8 @@ pub fn resolve_param(param: ParamWithData) -> Param {
                         for (col, value) in table.cols.iter().zip(row.values.iter()) {
                             arr.insert(
                                 [target_idxs.clone(), vec![row.label.clone(), col.clone()]]
-                                    .concat(),
+                                    .concat()
+                                    .into(),
                                 *value,
                             );
                         }

@@ -1,5 +1,5 @@
 use crate::{
-    gmpl::SetVal,
+    gmpl::atoms::Index,
     mps::{BoundsMap, ColsMap, Compiled, RowsMap, bound::BoundsOp, constraints::RowType},
 };
 
@@ -74,8 +74,8 @@ fn print_bounds(bounds: BoundsMap) {
     }
 }
 
-fn format_index_vals(v: &[SetVal]) -> String {
-    if v.is_empty() {
+fn format_index_vals(v: &Index) -> String {
+    if v.0.is_empty() {
         String::new()
     } else {
         let items: Vec<String> = v.iter().map(|s| s.to_string()).collect();

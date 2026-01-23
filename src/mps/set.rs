@@ -1,14 +1,17 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    gmpl::{self, DataSet, SetExpr, SetVal},
+    gmpl::{
+        self, SetData, SetExpr,
+        atoms::{Index, SetVal, SetVals},
+    },
     model::SetWithData,
     mps::{constraints::domain_to_indexes, lookup::Lookups},
 };
 
 pub struct SetCont {
     decl: gmpl::Set,
-    data: HashMap<Vec<SetVal>, Vec<SetVal>>,
+    data: HashMap<Index, SetVals>,
 }
 
 impl From<SetWithData> for SetCont {
@@ -18,7 +21,7 @@ impl From<SetWithData> for SetCont {
         let data = data
             .into_iter()
             .map(
-                |DataSet {
+                |SetData {
                      name: _,
                      index,
                      values,
@@ -31,12 +34,15 @@ impl From<SetWithData> for SetCont {
 }
 
 impl SetCont {
-    pub fn resolve(&self, index: &Vec<SetVal>, lookups: &Lookups) -> Vec<SetVal> {
+    pub fn resolve(&self, index: &Index, lookups: &Lookups) -> SetVals {
         // Data takes preference over expressions (probably)
         if let Some(set_data) = self.data.get(index) {
             // Should also check that the within/cross conditions are met!
             return set_data.clone();
         }
+
+        // I tried add a cache check here with a RwLock<HashMap<...>> but
+        // there wasn't any speed up. Possibly because of cloning and expensive hashkeys
 
         let (dims, expr) = (&self.decl.dims, &self.decl.expr);
         match expr {
@@ -54,7 +60,8 @@ impl SetCont {
                         // TODO we're handling only the special case of a single dimension
                         // to handle more we must check if len > 1 and then build a SetVal::Vec
                         .map(|i| i.first().unwrap().clone())
-                        .collect()
+                        .collect::<Vec<_>>()
+                        .into()
                 }
                 SetExpr::SetMath(set_math) => {
                     let idx_val_map: HashMap<String, SetVal> = dims
@@ -67,26 +74,25 @@ impl SetCont {
                         .intersection
                         .iter()
                         .map(|v| {
-                            let index_concrete: Vec<SetVal> = v
+                            let index_concrete: Index = v
                                 .subscript
-                                .as_ref()
-                                .unwrap()
-                                .indices
                                 .iter()
                                 .map(|i| idx_val_map.get(&i.var).unwrap().clone())
-                                .collect();
+                                .collect::<Vec<_>>()
+                                .into();
                             lookups
                                 .set_map
                                 .get(&v.var)
                                 .unwrap()
                                 .resolve(&index_concrete, lookups)
+                                .0
                         })
                         .collect();
 
-                    intersect(sets)
+                    intersect(sets).into()
                 }
             },
-            None => vec![],
+            None => vec![].into(),
         }
     }
 }

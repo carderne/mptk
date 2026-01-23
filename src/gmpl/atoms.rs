@@ -1,6 +1,7 @@
-use std::fmt;
+use std::{fmt, ops::Deref};
 
 use pest::iterators::Pair;
+use ref_cast::RefCast;
 
 use crate::{
     gmpl::expr::{Expr, LogicExpr},
@@ -10,6 +11,53 @@ use crate::{
 // ==============================
 // CHILD STRUCTS
 // ==============================
+
+/// Set val (identifier or positive integer)
+#[derive(Hash, Eq, PartialEq, Clone, Debug)]
+pub enum SetVal {
+    Str(String),
+    Int(u64),
+    Vec(Vec<SetValTerminal>),
+}
+
+#[derive(Hash, Eq, PartialEq, Clone, Debug)]
+pub enum SetValTerminal {
+    Str(String),
+    Int(u64),
+}
+
+impl SetVal {
+    pub fn from_entry(entry: Pair<Rule>) -> Self {
+        let inner = entry.into_inner().next().unwrap();
+        match inner.as_rule() {
+            Rule::id => SetVal::Str(inner.as_str().to_string()),
+            Rule::int => SetVal::Int(inner.as_str().parse().unwrap_or(0)),
+            _ => SetVal::Str(inner.as_str().to_string()),
+        }
+    }
+}
+
+impl fmt::Display for SetVal {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SetVal::Str(s) => write!(f, "{}", s),
+            SetVal::Int(n) => write!(f, "{}", n),
+            SetVal::Vec(v) => {
+                let items: Vec<String> = v.iter().map(|s| s.to_string()).collect();
+                write!(f, "{}", items.join(","))
+            }
+        }
+    }
+}
+
+impl fmt::Display for SetValTerminal {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SetValTerminal::Str(s) => write!(f, "{}", s),
+            SetValTerminal::Int(n) => write!(f, "{}", n),
+        }
+    }
+}
 
 /// Domain specification
 #[derive(Clone, Debug)]
@@ -51,14 +99,14 @@ impl fmt::Display for Domain {
 #[derive(Clone, Debug)]
 pub struct DomainPart {
     pub var: DomainPartVar,
-    pub idx: Vec<Index>,
     pub set: String,
+    pub subscript: Subscript,
 }
 
 impl DomainPart {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
         let mut var = DomainPartVar::Single(String::new());
-        let mut idx = Vec::new();
+        let mut subscript = Subscript::default();
         let mut set = String::new();
 
         for pair in entry.into_inner() {
@@ -81,14 +129,18 @@ impl DomainPart {
                     };
                 }
                 Rule::subscript => {
-                    idx = Subscript::from_entry(pair).indices;
+                    subscript = Subscript::from_entry(pair);
                 }
                 Rule::domain_set => set = pair.as_str().to_string(),
                 _ => {}
             }
         }
 
-        Self { var, idx, set }
+        Self {
+            var,
+            subscript,
+            set,
+        }
     }
 }
 
@@ -226,18 +278,18 @@ impl fmt::Display for BoolOp {
 #[derive(Clone, Debug)]
 pub struct VarSubscripted {
     pub var: String,
-    pub subscript: Option<Subscript>,
+    pub subscript: Subscript,
 }
 
 impl VarSubscripted {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
         let mut var = String::new();
-        let mut subscript = None;
+        let mut subscript = Subscript::default();
 
         for pair in entry.into_inner() {
             match pair.as_rule() {
                 Rule::var_ref => var = pair.as_str().to_string(),
-                Rule::subscript => subscript = Some(Subscript::from_entry(pair)),
+                Rule::subscript => subscript = Subscript::from_entry(pair),
                 _ => {}
             }
         }
@@ -249,62 +301,89 @@ impl VarSubscripted {
 impl fmt::Display for VarSubscripted {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.var)?;
-        if self.subscript.is_some() {
+        if !self.subscript.is_empty() {
             write!(f, "[...]")?;
         }
         Ok(())
     }
 }
 
-/// Subscript (array indexing)
-#[derive(Clone, Debug)]
-pub struct Subscript {
-    pub indices: Vec<Index>,
+/// SetVals
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Default, RefCast)]
+#[repr(transparent)]
+pub struct SetVals(pub Vec<SetVal>);
+
+impl Deref for SetVals {
+    type Target = Vec<SetVal>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
+
+impl From<Vec<SetVal>> for SetVals {
+    fn from(inner: Vec<SetVal>) -> Self {
+        SetVals(inner)
+    }
+}
+
+/// Index
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Default, RefCast)]
+#[repr(transparent)]
+pub struct Index(pub Vec<SetVal>);
+
+impl Deref for Index {
+    type Target = Vec<SetVal>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl From<Vec<SetVal>> for Index {
+    fn from(inner: Vec<SetVal>) -> Self {
+        Index(inner)
+    }
+}
+
+/// Subscript (array indexing with optional shifts)
+#[derive(Clone, Debug, Default)]
+pub struct Subscript(pub Vec<SubscriptPart>);
 
 impl Subscript {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
-        let mut indices = Vec::new();
+        let parts = entry
+            .into_inner()
+            .filter(|p| p.as_rule() == Rule::subscript_part)
+            .map(SubscriptPart::from_entry)
+            .collect();
+        Self(parts)
+    }
 
-        for pair in entry.into_inner() {
-            if pair.as_rule() == Rule::index {
-                indices.push(Index::from_entry(pair));
-            }
-        }
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 
-        Self { indices }
+    pub fn iter(&self) -> impl Iterator<Item = &SubscriptPart> {
+        self.0.iter()
     }
 }
 
-impl fmt::Display for Subscript {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "[")?;
-        for (i, idx) in self.indices.iter().enumerate() {
-            if i > 0 {
-                write!(f, ", ")?;
-            }
-            write!(f, "{}", idx)?;
-        }
-        write!(f, "]")
-    }
-}
-
-/// Index with optional shift
 #[derive(Clone, Debug)]
-pub struct Index {
+pub struct SubscriptPart {
     pub var: String,
-    pub shift: Option<IndexShift>,
+    pub shift: Option<SubscriptShift>,
 }
 
-impl Index {
+impl SubscriptPart {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
         let mut var = String::new();
         let mut shift = None;
 
         for pair in entry.into_inner() {
             match pair.as_rule() {
-                Rule::index_var => var = pair.as_str().to_string(),
-                Rule::index_shift => shift = Some(IndexShift::from_entry(pair)),
+                Rule::id => var = pair.as_str().to_string(),
+                Rule::subscript_shift => shift = Some(SubscriptShift::from_entry(pair)),
                 _ => {}
             }
         }
@@ -313,7 +392,7 @@ impl Index {
     }
 }
 
-impl fmt::Display for Index {
+impl fmt::Display for SubscriptPart {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.var)?;
         if let Some(shift) = &self.shift {
@@ -323,29 +402,29 @@ impl fmt::Display for Index {
     }
 }
 
-/// Index shift (+1 or -1)
+/// Subscript shift (+1 or -1)
 #[derive(Clone, Debug)]
-pub enum IndexShift {
+pub enum SubscriptShift {
     Plus,
     Minus,
 }
 
-impl IndexShift {
+impl SubscriptShift {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
         let s = entry.as_str();
         if s.starts_with('+') {
-            IndexShift::Plus
+            SubscriptShift::Plus
         } else {
-            IndexShift::Minus
+            SubscriptShift::Minus
         }
     }
 }
 
-impl fmt::Display for IndexShift {
+impl fmt::Display for SubscriptShift {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            IndexShift::Plus => write!(f, "+1"),
-            IndexShift::Minus => write!(f, "-1"),
+            SubscriptShift::Plus => write!(f, "+1"),
+            SubscriptShift::Minus => write!(f, "-1"),
         }
     }
 }

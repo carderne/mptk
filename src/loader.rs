@@ -44,13 +44,13 @@ pub fn consume(entries: Pairs<'_, Rule>) -> Vec<Entry> {
             }
 
             // Data rules
-            Rule::DATA_SET => {
+            Rule::SET_DATA => {
                 debug!("DATA:SET");
-                dirs.push(Entry::DataSet(gmpl::DataSet::from_entry(entry)));
+                dirs.push(Entry::DataSet(gmpl::SetData::from_entry(entry)));
             }
-            Rule::DATA_PARAM => {
+            Rule::PARAM_DATA => {
                 debug!("DATA:PARAM");
-                dirs.push(Entry::DataParam(gmpl::DataParam::from_entry(entry)));
+                dirs.push(Entry::DataParam(gmpl::ParamData::from_entry(entry)));
             }
 
             // Ignored

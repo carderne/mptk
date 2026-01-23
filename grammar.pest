@@ -104,22 +104,26 @@ table_var  = { var_subscripted ~ "~" ~ var_subscripted }
 // Less of the grammar but will be far majority of text parsed.
 // //////////////////////
 data_entry = _{
-  | DATA_SET
-  | DATA_PARAM
+  | SET_DATA
+  | PARAM_DATA
   | END
 }
 
 // Data: Set
-DATA_SET   = { "set" ~ id ~ set_index? ~ (":=" ~ set_assign?)? ~ ";" }
+SET_DATA   = { "set" ~ id ~ index? ~ (":=" ~ set_assign?)? ~ ";" }
 set_assign = { set_vals | set_tuples }
 set_tuples = { set_tuple+ }
 set_tuple  = { "(" ~ set_val ~ "," ~ set_val ~ ")" }
 set_vals   = { set_val+ }
 set_val    = { id | int }
-set_index  = { "[" ~ index ~ ("," ~ index)* ~ "]" }
+
+// Index
+// Whereas a subscript is symbolic, an "index" is made up of concrete values
+// from a given set.
+index  =  { "[" ~ set_val ~ ("," ~ set_val)* ~ "]" }
 
 // Data: Param
-DATA_PARAM          =  {
+PARAM_DATA          =  {
     "param" ~ id ~ ("default" ~ param_data_default)? ~ ":="? ~ param_data_body? ~ ";"
 }
 param_data_default  = @{ number }
@@ -134,7 +138,7 @@ param_data_cols     =  { set_val+ }
 param_data_row      = ${ set_val ~ param_data_row_vals }
 param_data_row_vals = ${ ((" " | "\t")+ ~ param_data_val)+ }
 param_data_val      = @{ number }
-param_data_target   =  { "[" ~ (index_var | param_data_any) ~ ("," ~ (index_var | param_data_any))* ~ "]" }
+param_data_target   =  { "[" ~ (set_val | param_data_any) ~ ("," ~ (set_val | param_data_any))* ~ "]" }
 param_data_any      =  { "*" }
 
 // //////////////////////
@@ -161,13 +165,12 @@ logic_infix    = _{ bool_and | bool_or }
 comparison     =  { expr ~ rel_op ~ expr }
 logic_compound =  { "(" ~ logic_expr ~ ")" }
 
-// Index
+// Subscripted var or param
 var_subscripted =  { var_ref ~ subscript? }
 var_ref         = @{ id }
-subscript       =  { "[" ~ index ~ ("," ~ index)* ~ "]" }
-index           =  { index_var ~ index_shift? }
-index_var       = @{ id }
-index_shift     =  { ("+" | "-") ~ "1" }
+subscript       =  { "[" ~ subscript_part ~ ("," ~ subscript_part)* ~ "]" }
+subscript_part  =  { id ~ subscript_shift? }
+subscript_shift =  { ("+" | "-") ~ "1" }
 
 // Expression
 // Bundled up with string_literal as often that is also allowed

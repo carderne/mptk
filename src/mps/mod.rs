@@ -11,19 +11,19 @@ use std::sync::Arc;
 use indexmap::IndexMap;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use crate::gmpl::{Constraint, ConstraintExpr, Domain, Expr, Objective, SetVal};
+use crate::gmpl::atoms::Index;
+use crate::gmpl::{Constraint, ConstraintExpr, Domain, Expr, Objective};
 use crate::model::ModelWithData;
 use crate::mps::bound::{Bounds, gen_bounds};
 use crate::mps::constraints::{Pair, RowType, algebra, domain_to_indexes, get_index_map, recurse};
 use crate::mps::lookup::Lookups;
 
 //                    var     var_index                 con     con_index       val
-type ColsMap =
-    IndexMap<(Arc<String>, Arc<Vec<SetVal>>), IndexMap<(Arc<String>, Arc<Vec<SetVal>>), f64>>;
+type ColsMap = IndexMap<(Arc<String>, Arc<Index>), IndexMap<(Arc<String>, Arc<Index>), f64>>;
 //                      con     con_index        type     rhs
-type RowsMap = IndexMap<(Arc<String>, Arc<Vec<SetVal>>), (Arc<RowType>, f64)>;
+type RowsMap = IndexMap<(Arc<String>, Arc<Index>), (Arc<RowType>, f64)>;
 //                      var     var_index       bounds
-type BoundsMap = IndexMap<(Arc<String>, Arc<Vec<SetVal>>), Arc<Bounds>>;
+type BoundsMap = IndexMap<(Arc<String>, Arc<Index>), Arc<Bounds>>;
 
 struct ConstraintOrObj {
     name: String,
@@ -41,7 +41,7 @@ pub struct Compiled {
 
 struct Con {
     name: Arc<String>,
-    idx: Arc<Vec<SetVal>>,
+    idx: Arc<Index>,
     row_type: Arc<RowType>,
     rhs: f64,
     pairs: Vec<Pair>,
@@ -78,16 +78,13 @@ fn build_cols_and_rows(cons: Vec<Con>) -> (ColsMap, RowsMap) {
     {
         rows.insert((name.clone(), idx.clone()), (row_type, rhs));
         for pair in pairs {
-            cols.entry((
-                Arc::new(pair.var),
-                Arc::new(pair.index.unwrap_or_else(Vec::new)),
-            ))
-            .or_default()
-            .entry((name.clone(), idx.clone()))
-            // With big sums, the same Var can appear multiple times, so we must accumulate the
-            // coefficients
-            .and_modify(|v| *v += pair.coeff)
-            .or_insert(pair.coeff);
+            cols.entry((Arc::new(pair.var), Arc::new(pair.index)))
+                .or_default()
+                .entry((name.clone(), idx.clone()))
+                // With big sums, the same Var can appear multiple times, so we must accumulate the
+                // coefficients
+                .and_modify(|v| *v += pair.coeff)
+                .or_insert(pair.coeff);
         }
     }
 
@@ -139,7 +136,7 @@ fn build_constraints(constraints: Vec<ConstraintOrObj>, lookups: &Lookups) -> Ve
 
                 let (indexes, parts) = domain
                     .map(|d| (domain_to_indexes(&d, lookups, &HashMap::new()), d.parts))
-                    .unwrap_or_else(|| (vec![vec![]], vec![]));
+                    .unwrap_or_else(|| (vec![vec![].into()], vec![]));
 
                 indexes
                     .into_par_iter()

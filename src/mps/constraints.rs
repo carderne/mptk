@@ -1,17 +1,21 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::gmpl::atoms::{BoolOp, Domain, DomainPart, DomainPartVar, Index, IndexShift, RelOp};
+use crate::gmpl::LogicExpr;
+use crate::gmpl::atoms::{
+    BoolOp, Domain, DomainPart, DomainPartVar, Index, RelOp, SetVal, SetValTerminal, Subscript,
+    SubscriptShift,
+};
 use crate::gmpl::{Expr, atoms::MathOp};
-use crate::gmpl::{LogicExpr, SetVal, SetValTerminal};
 use crate::mps::lookup::Lookups;
 use crate::mps::param::ParamVal;
 use itertools::Itertools;
+use ref_cast::RefCast;
 
 #[derive(Clone, Debug)]
 pub struct Pair {
     pub var: String,
-    pub index: Option<Vec<SetVal>>,
+    pub index: Index,
     pub coeff: f64,
 }
 
@@ -34,10 +38,7 @@ pub fn recurse(expr: &Expr, lookups: &Lookups, idx_val_map: &IdxValMap) -> Vec<T
             let name = &var_or_param.var;
             // Need to convert from symbolic subscript references
             // to concrete index values
-            let index = var_or_param
-                .subscript
-                .as_ref()
-                .map(|subscript| concrete_index(&subscript.indices, idx_val_map));
+            let index = concrete_index(&var_or_param.subscript, idx_val_map);
 
             if lookups.var_map.contains_key(name) {
                 vec![Term::Pair(Pair {
@@ -49,8 +50,7 @@ pub fn recurse(expr: &Expr, lookups: &Lookups, idx_val_map: &IdxValMap) -> Vec<T
                 match &param.data {
                     ParamVal::Scalar(num) => vec![Term::Num(*num)],
                     ParamVal::Arr(arr) => {
-                        let arr_idx = index.expect("index is none");
-                        if let Some(arr_val) = arr.get(&arr_idx) {
+                        if let Some(arr_val) = arr.get(&index) {
                             vec![Term::Num(*arr_val)]
                         } else {
                             match &param.default {
@@ -238,20 +238,21 @@ pub fn domain_to_indexes(
     domain: &Domain,
     lookups: &Lookups,
     idx_val_map: &IdxValMap,
-) -> Vec<Vec<SetVal>> {
+) -> Vec<Index> {
     let Domain { parts, condition } = domain;
     let cartesian: Box<dyn Iterator<Item = Vec<SetVal>>> =
-        if parts.iter().all(|part| part.idx.is_empty()) {
+        if parts.iter().all(|part| part.subscript.is_empty()) {
             Box::new(
                 parts
                     .iter()
                     .map(|part| {
-                        let concrete_idx = vec![];
+                        let concrete_idx: Index = vec![].into();
                         lookups
                             .set_map
                             .get(&part.set)
                             .unwrap()
                             .resolve(&concrete_idx, lookups)
+                            .0
                     })
                     .multi_cartesian_product(),
             )
@@ -269,15 +270,16 @@ pub fn domain_to_indexes(
                 Box::new(vec![vec![]].into_iter());
             for part in parts {
                 cartesian = Box::new(cartesian.flat_map(|existing| {
-                    let mut idx_map = get_index_map(parts, &existing);
+                    let mut idx_map = get_index_map(parts, Index::ref_cast(&existing));
                     idx_map.extend(idx_val_map.clone());
-                    let concrete_idx = concrete_index(&part.idx, &idx_map);
+                    let concrete_idx = concrete_index(&part.subscript, &idx_map);
 
                     lookups
                         .set_map
                         .get(&part.set)
                         .unwrap()
                         .resolve(&concrete_idx, lookups)
+                        .0
                         .into_iter()
                         .map(|val| [existing.as_slice(), &[val]].concat())
                         .collect::<Vec<_>>()
@@ -286,21 +288,23 @@ pub fn domain_to_indexes(
             cartesian
         };
 
-    let res = cartesian
-        .filter_map(|idx| match &condition {
-            None => Some(idx),
-            Some(logic) => {
-                let mut idx_map = get_index_map(parts, &idx);
-                idx_map.extend(idx_val_map.clone());
-                if check_domain_condition(logic, lookups, &idx_map) {
-                    Some(idx)
-                } else {
-                    None
+    cartesian
+        .filter_map(|idx| {
+            let idx = Index::from(idx);
+            match &condition {
+                None => Some(idx),
+                Some(logic) => {
+                    let mut idx_map = get_index_map(parts, &idx);
+                    idx_map.extend(idx_val_map.clone());
+                    if check_domain_condition(logic, lookups, &idx_map) {
+                        Some(idx)
+                    } else {
+                        None
+                    }
                 }
             }
         })
-        .collect();
-    res
+        .collect::<Vec<Index>>()
 }
 
 fn check_domain_condition(logic: &LogicExpr, lookups: &Lookups, idx_val_map: &IdxValMap) -> bool {
@@ -421,7 +425,7 @@ pub fn algebra(lhs: Vec<Term>, rhs: Vec<Term>) -> (Vec<Pair>, f64) {
     (pairs, rhs_total)
 }
 
-pub fn get_index_map(parts: &[DomainPart], idx: &[SetVal]) -> IdxValMap {
+pub fn get_index_map(parts: &[DomainPart], idx: &Index) -> IdxValMap {
     // idx_val_map stores the current LOCATION
     // as a dict like:
     // { y => 2014, r: "Africa" }
@@ -466,11 +470,12 @@ fn eval_func_minmax(
     // Only support min/maxing a single dimension
     match domain.parts.first() {
         Some(set_domain) => {
-            let concrete_set_keys: Vec<_> = set_domain
-                .idx
+            let concrete_set_keys: Index = set_domain
+                .subscript
                 .iter()
                 .map(|k| idx_val_map.get(&k.var).unwrap().clone())
-                .collect();
+                .collect::<Vec<_>>()
+                .into();
             let resolved = lookups
                 .set_map
                 .get(&set_domain.set)
@@ -503,8 +508,8 @@ fn negate_terms(terms: Vec<Term>) -> Vec<Term> {
         .collect()
 }
 
-fn concrete_index(index: &[Index], idx_val_map: &IdxValMap) -> Vec<SetVal> {
-    index
+fn concrete_index(susbcript: &Subscript, idx_val_map: &IdxValMap) -> Index {
+    susbcript
         .iter()
         .map(|i| {
             let index_val = idx_val_map.get(&i.var).unwrap_or_else(|| {
@@ -516,8 +521,8 @@ fn concrete_index(index: &[Index], idx_val_map: &IdxValMap) -> Vec<SetVal> {
                         panic!("tried to index shift on string index val")
                     }
                     SetVal::Int(index_num) => match shift {
-                        IndexShift::Plus => SetVal::Int(index_num + 1),
-                        IndexShift::Minus => SetVal::Int(index_num - 1),
+                        SubscriptShift::Plus => SetVal::Int(index_num + 1),
+                        SubscriptShift::Minus => SetVal::Int(index_num - 1),
                     },
                     SetVal::Vec(_) => {
                         panic!("tuple set not allowed in var subscript")
@@ -526,5 +531,6 @@ fn concrete_index(index: &[Index], idx_val_map: &IdxValMap) -> Vec<SetVal> {
                 None => index_val.clone(),
             }
         })
-        .collect()
+        .collect::<Vec<_>>()
+        .into()
 }
