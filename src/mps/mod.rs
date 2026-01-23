@@ -14,9 +14,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use crate::gmpl::{Constraint, Objective, SetVal};
 use crate::model::ModelWithData;
 use crate::mps::bound::{Bounds, gen_bounds};
-use crate::mps::constraints::{
-    Pair, RowType, algebra, domain_to_indexes, get_idx_val_map, recurse,
-};
+use crate::mps::constraints::{Pair, RowType, algebra, domain_to_indexes, get_index_map, recurse};
 use crate::mps::lookup::Lookups;
 
 //                    var     var_index                 con     con_index       val
@@ -78,7 +76,11 @@ fn build_cols_and_rows(cons: Vec<Con>) -> (ColsMap, RowsMap) {
                 Arc::new(pair.index.unwrap_or_else(Vec::new)),
             ))
             .or_default()
-            .insert((name.clone(), idx.clone()), pair.coeff);
+            .entry((name.clone(), idx.clone()))
+            // With big sums, the same Var can appear multiple times, so we must accumulate the
+            // coefficients
+            .and_modify(|v| *v += pair.coeff)
+            .or_insert(pair.coeff);
         }
     }
 
@@ -87,9 +89,7 @@ fn build_cols_and_rows(cons: Vec<Con>) -> (ColsMap, RowsMap) {
 
 fn build_objective_constraint(objective: Objective, lookups: &Lookups) -> Con {
     let pairs = recurse(&objective.expr, lookups, &HashMap::new());
-
     let (pairs, rhs) = algebra(pairs, vec![]);
-
     Con {
         name: Arc::new(objective.name),
         // Objective is always "singular": it has no domain
@@ -105,25 +105,26 @@ fn build_constraints(constraints: Vec<Constraint>, lookups: &Lookups) -> Vec<Con
         .into_par_iter()
         .flat_map(|Constraint { name, domain, expr }| {
             let name = Arc::new(name);
-            domain
-                .as_ref()
-                .map_or(vec![], |d| domain_to_indexes(d, lookups, None))
-                .into_par_iter()
-                .map(|con_index| {
-                    let con_index = Arc::new(con_index);
-                    let idx_val_map = get_idx_val_map(&domain, &con_index);
-                    let lhs = recurse(&expr.lhs, lookups, &idx_val_map);
-                    let rhs = recurse(&expr.rhs, lookups, &idx_val_map);
-                    let (pairs, rhs_total) = algebra(lhs, rhs);
-                    Con {
-                        name: name.clone(),
-                        idx: con_index,
-                        row_type: RowType::from_rel_op(&expr.op),
-                        rhs: rhs_total,
-                        pairs,
-                    }
-                })
-                .collect::<Vec<_>>()
+            match domain {
+                Some(domain) => domain_to_indexes(&domain, lookups, &HashMap::new())
+                    .into_par_iter()
+                    .map(|con_index| {
+                        let con_index = Arc::new(con_index);
+                        let idx_val_map = get_index_map(&domain.parts, &con_index);
+                        let lhs = recurse(&expr.lhs, lookups, &idx_val_map);
+                        let rhs = recurse(&expr.rhs, lookups, &idx_val_map);
+                        let (pairs, rhs_total) = algebra(lhs, rhs);
+                        Con {
+                            name: name.clone(),
+                            idx: con_index,
+                            row_type: RowType::from_rel_op(&expr.op),
+                            rhs: rhs_total,
+                            pairs,
+                        }
+                    })
+                    .collect::<Vec<_>>(),
+                None => vec![],
+            }
         })
         .collect()
 }

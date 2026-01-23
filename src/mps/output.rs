@@ -1,6 +1,6 @@
 use crate::{
     gmpl::SetVal,
-    mps::{BoundsMap, ColsMap, Compiled, RowsMap, bound::BoundsOp},
+    mps::{BoundsMap, ColsMap, Compiled, RowsMap, bound::BoundsOp, constraints::RowType},
 };
 
 pub fn print_mps(compiled: Compiled, model_name: &str) {
@@ -35,7 +35,12 @@ fn print_cols(cols: ColsMap) {
 
 fn print_rhs(rows: &RowsMap) {
     println!("RHS");
-    for ((name, idx), (_, val)) in rows {
+    for ((name, idx), (row_type, val)) in rows {
+        // Skip N-type rows (objective function) - they should never have RHS
+        // TODO: why were these getting printed? Small 0.00.. value?
+        if *row_type == RowType::N {
+            continue;
+        }
         // MPS format assumes RHS is 0 if not provided
         // NB: -0 and +0 are different values
         if *val != 0.0 {

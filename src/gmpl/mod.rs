@@ -709,8 +709,10 @@ impl fmt::Display for SetVal {
         match self {
             SetVal::Str(s) => write!(f, "{}", s),
             SetVal::Int(n) => write!(f, "{}", n),
-            // TODO don't do debug format
-            SetVal::Vec(v) => write!(f, "{:?}", v),
+            SetVal::Vec(v) => {
+                let items: Vec<String> = v.iter().map(|s| s.to_string()).collect();
+                write!(f, "{}", items.join(","))
+            }
         }
     }
 }

@@ -81,8 +81,7 @@ mod tests {
     #[test]
     fn test_parse() {
         let text = r#"set YEAR;"#;
-        let entries = parse(&text);
-        dbg!(entries);
+        let _entries = parse(&text);
     }
 
     #[test]

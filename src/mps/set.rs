@@ -39,15 +39,23 @@ impl SetCont {
         }
 
         let (dims, expr) = (&self.decl.dims, &self.decl.expr);
-
-        if let Some(expr) = expr {
-            match expr {
-                SetExpr::Domain(domain) => domain_to_indexes(domain, lookups, None)
-                    .iter()
-                    // TODO we're handling only the special case of a single dimension
-                    // to handle more we must check if len > 1 and then build a SetVal::Vec
-                    .map(|i| i.first().unwrap().clone())
-                    .collect(),
+        match expr {
+            Some(expr) => match expr {
+                // This is using a Set domain expression to actually build the values for the set,
+                // rather than "get" them from one or more sets
+                SetExpr::Domain(domain) => {
+                    let idx_val_map: HashMap<String, SetVal> = dims
+                        .iter()
+                        .zip(index.iter().cloned())
+                        .map(|(part, idx_val)| (part.id.clone(), idx_val))
+                        .collect();
+                    domain_to_indexes(domain, lookups, &idx_val_map)
+                        .iter()
+                        // TODO we're handling only the special case of a single dimension
+                        // to handle more we must check if len > 1 and then build a SetVal::Vec
+                        .map(|i| i.first().unwrap().clone())
+                        .collect()
+                }
                 SetExpr::SetMath(set_math) => {
                     let idx_val_map: HashMap<String, SetVal> = dims
                         .iter()
@@ -77,10 +85,9 @@ impl SetCont {
 
                     intersect(sets)
                 }
-            };
+            },
+            None => vec![],
         }
-
-        vec![]
     }
 }
 

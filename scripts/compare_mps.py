@@ -14,9 +14,13 @@ def parse_mps(path):
         'BOUNDS': {},    # (type, bnd_name, var_name) -> value or None
     }
     current_section = None
+    line_count = 0
 
     with open(path, 'r') as f:
         for line in f:
+            line_count += 1
+            if line_count % 1_000_000 == 0:
+                print(f"  ... {line_count:,} lines parsed", flush=True)
             line = line.strip()
             if not line:
                 continue

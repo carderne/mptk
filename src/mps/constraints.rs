@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::gmpl::atoms::{BoolOp, Domain, DomainPart, DomainPartVar, IndexShift, RelOp};
+use crate::gmpl::atoms::{BoolOp, Domain, DomainPart, DomainPartVar, Index, IndexShift, RelOp};
 use crate::gmpl::{Expr, atoms::MathOp};
 use crate::gmpl::{LogicExpr, SetVal, SetValTerminal};
 use crate::mps::lookup::Lookups;
@@ -32,33 +32,12 @@ pub fn recurse(expr: &Expr, lookups: &Lookups, idx_val_map: &IdxValMap) -> Vec<T
         Expr::Number(num) => vec![Term::Num(*num)],
         Expr::VarSubscripted(var_or_param) => {
             let name = &var_or_param.var;
-
             // Need to convert from symbolic subscript references
             // to concrete index values
-            let index = var_or_param.subscript.as_ref().map(|subscript| {
-                subscript
-                    .indices
-                    .iter()
-                    .map(|i| {
-                        let index_val = idx_val_map.get(&i.var).unwrap();
-                        match &i.shift {
-                            Some(shift) => match index_val {
-                                SetVal::Str(_) => {
-                                    panic!("tried to index shift on string index val")
-                                }
-                                SetVal::Int(index_num) => match shift {
-                                    IndexShift::Plus => SetVal::Int(index_num + 1),
-                                    IndexShift::Minus => SetVal::Int(index_num - 1),
-                                },
-                                SetVal::Vec(_) => {
-                                    panic!("tuple set not allowed in var subscript")
-                                }
-                            },
-                            None => index_val.clone(),
-                        }
-                    })
-                    .collect()
-            });
+            let index = var_or_param
+                .subscript
+                .as_ref()
+                .map(|subscript| concrete_index(&subscript.indices, idx_val_map));
 
             if lookups.var_map.contains_key(name) {
                 vec![Term::Pair(Pair {
@@ -221,6 +200,7 @@ pub fn recurse(expr: &Expr, lookups: &Lookups, idx_val_map: &IdxValMap) -> Vec<T
     }
 }
 
+#[derive(PartialEq)]
 pub enum RowType {
     L,
     E,
@@ -257,33 +237,61 @@ impl RowType {
 pub fn domain_to_indexes(
     domain: &Domain,
     lookups: &Lookups,
-    idx_val_map: Option<&IdxValMap>,
+    idx_val_map: &IdxValMap,
 ) -> Vec<Vec<SetVal>> {
     let Domain { parts, condition } = domain;
-    parts
-        .iter()
-        .map(|p| {
-            let concrete_set_keys: Vec<_> = idx_val_map.map_or(vec![], |i| {
-                p.idx
+    let cartesian: Box<dyn Iterator<Item = Vec<SetVal>>> =
+        if parts.iter().all(|part| part.idx.is_empty()) {
+            Box::new(
+                parts
                     .iter()
-                    .map(|k| i.get(&k.var).unwrap().clone())
-                    .collect()
-            });
-            lookups
-                .set_map
-                .get(&p.set)
-                .unwrap()
-                .resolve(&concrete_set_keys, lookups)
-        })
-        .multi_cartesian_product()
+                    .map(|part| {
+                        let concrete_idx = vec![];
+                        lookups
+                            .set_map
+                            .get(&part.set)
+                            .unwrap()
+                            .resolve(&concrete_idx, lookups)
+                    })
+                    .multi_cartesian_product(),
+            )
+        } else {
+            // GMPL has a degenerate feature where in a domain expression like
+            // { a in A, b in B[a] }
+            // a later indexed set can refer to a set value from another one
+            // Plausibly this could go twice like
+            // { a in A, b in B[a], c in C[b] }
+            // but I'm hoping not to support that
+
+            // The Box dyn is just to keep the variable as an iterator so we can
+            // reassign to it but not have to collect it until we're done iterating
+            let mut cartesian: Box<dyn Iterator<Item = Vec<SetVal>>> =
+                Box::new(vec![vec![]].into_iter());
+            for part in parts {
+                cartesian = Box::new(cartesian.flat_map(|existing| {
+                    let mut idx_map = get_index_map(parts, &existing);
+                    idx_map.extend(idx_val_map.clone());
+                    let concrete_idx = concrete_index(&part.idx, &idx_map);
+
+                    lookups
+                        .set_map
+                        .get(&part.set)
+                        .unwrap()
+                        .resolve(&concrete_idx, lookups)
+                        .into_iter()
+                        .map(|val| [existing.as_slice(), &[val]].concat())
+                        .collect::<Vec<_>>()
+                }));
+            }
+            cartesian
+        };
+
+    let res = cartesian
         .filter_map(|idx| match &condition {
             None => Some(idx),
             Some(logic) => {
-                let mut idx_map = index_map_from_parts(parts, &idx);
-                if let Some(idx_val_map) = idx_val_map {
-                    idx_map.extend(idx_val_map.clone());
-                }
-
+                let mut idx_map = get_index_map(parts, &idx);
+                idx_map.extend(idx_val_map.clone());
                 if check_domain_condition(logic, lookups, &idx_map) {
                     Some(idx)
                 } else {
@@ -291,30 +299,8 @@ pub fn domain_to_indexes(
                 }
             }
         })
-        .collect()
-}
-
-pub fn get_idx_val_map(domain: &Option<Domain>, con_index: &[SetVal]) -> IdxValMap {
-    // idx_val_map stores the current LOCATION
-    // as a dict like:
-    // { y => 2014, r: "Africa" }
-    //
-    // This should be improved so that it also knows which set/dimension
-    // each entry comes from...
-
-    if let Some(domain) = domain {
-        domain
-            .parts
-            .iter()
-            .zip(con_index.iter().cloned())
-            .map(|(part, idx_val)| match &part.var {
-                DomainPartVar::Single(val) => (val.clone(), idx_val),
-                DomainPartVar::Tuple(_) => panic!("tuple domain part not valid in constraint def"),
-            })
-            .collect()
-    } else {
-        HashMap::new()
-    }
+        .collect();
+    res
 }
 
 fn check_domain_condition(logic: &LogicExpr, lookups: &Lookups, idx_val_map: &IdxValMap) -> bool {
@@ -330,12 +316,13 @@ fn check_domain_condition(logic: &LogicExpr, lookups: &Lookups, idx_val_map: &Id
             match (lhs_num, rhs_num) {
                 (Term::Num(lhs), Term::Num(rhs)) => match op {
                     RelOp::Eq => lhs == rhs,
+                    RelOp::EqEq => lhs == rhs,
                     RelOp::Ne => lhs != rhs,
+                    RelOp::Ne2 => lhs != rhs,
                     RelOp::Gt => lhs > rhs,
                     RelOp::Ge => lhs >= rhs,
                     RelOp::Lt => lhs < rhs,
                     RelOp::Le => lhs <= rhs,
-                    _ => panic!("unhandled logic expr: {}", logic),
                 },
                 (Term::Str(lhs), Term::Str(rhs)) => match op {
                     RelOp::Eq => lhs == rhs,
@@ -362,10 +349,10 @@ fn expand_sum(
     lookups: &Lookups,
     idx_val_map: &IdxValMap,
 ) -> Vec<Term> {
-    domain_to_indexes(sum_domain, lookups, Some(idx_val_map))
+    domain_to_indexes(sum_domain, lookups, idx_val_map)
         .into_iter()
         .flat_map(|idx| {
-            let mut idx_map = index_map_from_parts(&sum_domain.parts, &idx);
+            let mut idx_map = get_index_map(&sum_domain.parts, &idx);
             idx_map.extend(idx_val_map.clone());
             recurse(operand, lookups, &idx_map)
         })
@@ -434,7 +421,13 @@ pub fn algebra(lhs: Vec<Term>, rhs: Vec<Term>) -> (Vec<Pair>, f64) {
     (pairs, rhs_total)
 }
 
-fn index_map_from_parts(parts: &[DomainPart], idx: &[SetVal]) -> IdxValMap {
+pub fn get_index_map(parts: &[DomainPart], idx: &[SetVal]) -> IdxValMap {
+    // idx_val_map stores the current LOCATION
+    // as a dict like:
+    // { y => 2014, r: "Africa" }
+    //
+    // This should be improved so that it also knows which set/dimension
+    // each entry comes from...
     parts
         .iter()
         .zip(idx.iter().cloned())
@@ -506,6 +499,32 @@ fn negate_terms(terms: Vec<Term>) -> Vec<Term> {
                 var: p.var,
                 index: p.index,
             }),
+        })
+        .collect()
+}
+
+fn concrete_index(index: &[Index], idx_val_map: &IdxValMap) -> Vec<SetVal> {
+    index
+        .iter()
+        .map(|i| {
+            let index_val = idx_val_map.get(&i.var).unwrap_or_else(|| {
+                panic!("No idx val available at {} from {:?}", &i.var, idx_val_map)
+            });
+            match &i.shift {
+                Some(shift) => match index_val {
+                    SetVal::Str(_) => {
+                        panic!("tried to index shift on string index val")
+                    }
+                    SetVal::Int(index_num) => match shift {
+                        IndexShift::Plus => SetVal::Int(index_num + 1),
+                        IndexShift::Minus => SetVal::Int(index_num - 1),
+                    },
+                    SetVal::Vec(_) => {
+                        panic!("tuple set not allowed in var subscript")
+                    }
+                },
+                None => index_val.clone(),
+            }
         })
         .collect()
 }
