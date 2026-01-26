@@ -70,10 +70,7 @@ pub fn recurse(expr: &Expr, lookups: &Lookups, idx_val_map: &IdxValMap) -> Vec<T
                             }
                         }
                     }
-                    ParamVal::Expr(expr) => {
-                        let res = recurse(expr, lookups, idx_val_map);
-                        res
-                    }
+                    ParamVal::Expr(expr) => recurse(expr, lookups, idx_val_map),
                     ParamVal::None => match &param.default {
                         Some(expr) => recurse(expr, lookups, idx_val_map),
                         None => panic!("tried to get uninitialized param"),

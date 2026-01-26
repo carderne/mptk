@@ -1,17 +1,19 @@
-pub mod model;
+pub(crate) mod interner;
+pub(crate) mod model;
+pub(crate) mod op;
 
 use std::fmt;
 use std::ops::Deref;
 use std::sync::LazyLock;
 
 use lasso::Spur;
-use lasso::ThreadedRodeo;
 use pest::iterators::Pair;
 use pest::iterators::Pairs;
 use pest::pratt_parser::{Assoc::*, Op, PrattParser};
 use smallvec::{SmallVec, smallvec};
 
 use crate::gmpl::grammar::Rule;
+use crate::ir::interner::{intern, intern_resolve};
 
 static PRATT_PARSER: LazyLock<PrattParser<Rule>> = LazyLock::new(|| {
     PrattParser::new()
@@ -23,16 +25,12 @@ static PRATT_PARSER: LazyLock<PrattParser<Rule>> = LazyLock::new(|| {
         .op(Op::infix(Rule::pow, Right))
 });
 
-pub static INTERNER: LazyLock<ThreadedRodeo> = LazyLock::new(ThreadedRodeo::default);
-
-// Intern a string (thread-safe)
-pub fn intern(s: &str) -> Spur {
-    INTERNER.get_or_intern(s)
-}
-
-pub fn resolve(spur: Spur) -> &'static str {
-    INTERNER.resolve(&spur)
-}
+static LOGIC_PRATT: LazyLock<PrattParser<Rule>> = LazyLock::new(|| {
+    PrattParser::new()
+        // Precedence: and > or (standard convention)
+        .op(Op::infix(Rule::bool_or, Left))
+        .op(Op::infix(Rule::bool_and, Left))
+});
 
 // ==============================
 // ROOT RULES
@@ -75,7 +73,7 @@ impl Var {
 
 impl fmt::Display for Var {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "var {}", resolve(self.name))?;
+        write!(f, "var {}", intern_resolve(self.name))?;
         if self.domain.is_some() {
             write!(f, " <domain>")?;
         }
@@ -149,7 +147,7 @@ impl Param {
 
 impl fmt::Display for Param {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "param {}", resolve(self.name))?;
+        write!(f, "param {}", intern_resolve(self.name))?;
         if self.domain.is_some() {
             write!(f, " <domain>")?;
         }
@@ -226,7 +224,7 @@ impl Set {
 
 impl fmt::Display for Set {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "set {}", resolve(self.name))
+        write!(f, "set {}", intern_resolve(self.name))
     }
 }
 
@@ -322,7 +320,7 @@ impl Objective {
 
 impl fmt::Display for Objective {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} {}: <expr>", self.sense, resolve(self.name))
+        write!(f, "{} {}: <expr>", self.sense, intern_resolve(self.name))
     }
 }
 
@@ -359,7 +357,7 @@ impl Constraint {
 
 impl fmt::Display for Constraint {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "constraint {}", resolve(self.name))?;
+        write!(f, "constraint {}", intern_resolve(self.name))?;
         if self.domain.is_some() {
             write!(f, " <domain>")?;
         }
@@ -454,7 +452,7 @@ impl fmt::Display for SetData {
         write!(
             f,
             "data: set {} := <{} values>",
-            resolve(self.name),
+            intern_resolve(self.name),
             self.values.len()
         )
     }
@@ -539,7 +537,7 @@ impl ParamData {
 
 impl fmt::Display for ParamData {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "data: param {}", resolve(self.name))?;
+        write!(f, "data: param {}", intern_resolve(self.name))?;
         if self.default.is_some() {
             write!(f, " default <value>")?;
         }
@@ -940,13 +938,6 @@ impl fmt::Display for Expr {
     }
 }
 
-static LOGIC_PRATT: LazyLock<PrattParser<Rule>> = LazyLock::new(|| {
-    PrattParser::new()
-        // Precedence: and > or (standard convention)
-        .op(Op::infix(Rule::bool_or, Left))
-        .op(Op::infix(Rule::bool_and, Left))
-});
-
 /// Logical expression - recursive tree structure with proper operator precedence
 #[derive(Clone, Debug)]
 pub enum LogicExpr {
@@ -1024,22 +1015,18 @@ impl Conditional {
         let mut then_expr = None;
         let mut else_expr = None;
 
-        let inner: Vec<_> = entry.into_inner().collect();
-        let mut i = 0;
-        while i < inner.len() {
-            let pair = &inner[i];
+        for pair in entry.into_inner() {
             match pair.as_rule() {
-                Rule::logic_expr => condition = Some(LogicExpr::from_entry(pair.clone())),
+                Rule::logic_expr => condition = Some(LogicExpr::from_entry(pair)),
                 Rule::expr => {
                     if then_expr.is_none() {
-                        then_expr = Some(Box::new(Expr::from_entry(pair.clone())));
+                        then_expr = Some(Box::new(Expr::from_entry(pair)));
                     } else {
-                        else_expr = Some(Box::new(Expr::from_entry(pair.clone())));
+                        else_expr = Some(Box::new(Expr::from_entry(pair)));
                     }
                 }
                 _ => {}
             }
-            i += 1;
         }
 
         Self {
@@ -1093,7 +1080,7 @@ impl SetVal {
 impl fmt::Display for SetVal {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            SetVal::Str(s) => write!(f, "{}", resolve(*s)),
+            SetVal::Str(s) => write!(f, "{}", intern_resolve(*s)),
             SetVal::Int(n) => write!(f, "{}", n),
             SetVal::Tuple([a, b]) => write!(f, "{},{}", a, b),
         }
@@ -1103,7 +1090,7 @@ impl fmt::Display for SetVal {
 impl fmt::Display for SetValTerminal {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            SetValTerminal::Str(s) => write!(f, "{}", resolve(*s)),
+            SetValTerminal::Str(s) => write!(f, "{}", intern_resolve(*s)),
             SetValTerminal::Int(n) => write!(f, "{}", n),
         }
     }
@@ -1194,7 +1181,7 @@ impl DomainPart {
 
 impl fmt::Display for DomainPart {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} in {}", self.var, resolve(self.set))
+        write!(f, "{} in {}", self.var, intern_resolve(self.set))
     }
 }
 
@@ -1207,9 +1194,9 @@ pub enum DomainPartVar {
 impl fmt::Display for DomainPartVar {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            DomainPartVar::Single(s) => write!(f, "{}", resolve(*s)),
+            DomainPartVar::Single(s) => write!(f, "{}", intern_resolve(*s)),
             DomainPartVar::Tuple(v) => {
-                let strs: Vec<&str> = v.iter().map(|s| resolve(*s)).collect();
+                let strs: Vec<&str> = v.iter().map(|s| intern_resolve(*s)).collect();
                 write!(f, "({})", strs.join(", "))
             }
         }
@@ -1354,7 +1341,7 @@ impl VarSubscripted {
 
 impl fmt::Display for VarSubscripted {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", resolve(self.var))?;
+        write!(f, "{}", intern_resolve(self.var))?;
         if !self.subscript.is_empty() {
             write!(f, "[...]")?;
         }
@@ -1432,7 +1419,7 @@ impl SubscriptPart {
 
 impl fmt::Display for SubscriptPart {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", resolve(self.var))?;
+        write!(f, "{}", intern_resolve(self.var))?;
         if let Some(shift) = &self.shift {
             write!(f, "{}", shift)?;
         }

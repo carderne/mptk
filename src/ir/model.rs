@@ -3,12 +3,17 @@ use std::fmt;
 
 use lasso::Spur;
 
-use crate::ir::{Constraint, Entry, Objective, Param, ParamData, Set, SetData, Var, resolve};
+use crate::ir::{
+    Constraint, ConstraintExpr, Domain, Entry, Expr, Objective, Param, ParamData, Set, SetData,
+    Var, intern_resolve, op::RowType,
+};
 
 /// A set declaration with optional data
 #[derive(Clone, Debug)]
 pub struct SetWithData {
     pub decl: Set,
+    /// Sets with indices, eg TIMESLICE[y] will have multiple data entries,
+    /// one for each y
     pub data: Vec<SetData>,
 }
 
@@ -40,18 +45,35 @@ impl fmt::Display for ParamWithData {
 }
 
 #[derive(Clone, Debug)]
+pub struct ConstraintOrObjective {
+    pub name: Spur,
+    pub domain: Option<Domain>,
+    pub row_type: RowType,
+    pub lhs: Expr,
+    pub rhs: Expr,
+}
+
+impl fmt::Display for ConstraintOrObjective {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "constraint {}", intern_resolve(self.name))?;
+        if self.domain.is_some() {
+            write!(f, " <domain>")?;
+        }
+        write!(f, ": {}", self.lhs)?;
+        write!(f, ": {}", self.rhs)
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct ModelWithData {
     pub sets: Vec<SetWithData>,
     pub vars: Vec<Var>,
     pub pars: Vec<ParamWithData>,
-    pub objective: Objective,
-    pub constraints: Vec<Constraint>,
+    pub constraints: Vec<ConstraintOrObjective>,
 }
 
 impl fmt::Display for ModelWithData {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "{}", &self.objective)?;
-
         for set in &self.sets {
             writeln!(f, "{}", set)?;
         }
@@ -121,7 +143,7 @@ impl ModelWithData {
         if let Some((name, _)) = data_set_map.into_iter().next() {
             panic!(
                 "Data set '{}' has no matching model declaration",
-                resolve(name)
+                intern_resolve(name)
             );
         }
 
@@ -141,7 +163,7 @@ impl ModelWithData {
             } else {
                 panic!(
                     "Data param '{}' has no matching model declaration",
-                    resolve(data_param.name)
+                    intern_resolve(data_param.name)
                 );
             }
         }
@@ -154,12 +176,45 @@ impl ModelWithData {
             });
         }
 
+        let all_constraints = prep_constraints(objective.unwrap(), constraints);
+
         ModelWithData {
-            objective: objective.unwrap(),
             sets: matched_sets,
             pars: matched_params,
             vars,
-            constraints,
+            constraints: all_constraints,
         }
     }
+}
+
+fn prep_constraints(
+    objective: Objective,
+    constraints: Vec<Constraint>,
+) -> Vec<ConstraintOrObjective> {
+    let mut all: Vec<ConstraintOrObjective> = constraints
+        .into_iter()
+        .map(|Constraint { name, domain, expr }| {
+            let ConstraintExpr { lhs, rhs, op } = expr;
+            ConstraintOrObjective {
+                name,
+                domain,
+                row_type: RowType::from_rel_op(&op),
+                lhs,
+                rhs,
+            }
+        })
+        .collect();
+    let Objective {
+        name,
+        expr,
+        sense: _,
+    } = objective;
+    all.push(ConstraintOrObjective {
+        name,
+        domain: None,
+        row_type: RowType::Unconstrained,
+        lhs: expr,
+        rhs: Expr::Number(0.0),
+    });
+    all
 }

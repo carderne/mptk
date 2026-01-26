@@ -4,7 +4,7 @@ use crate::{
     ir::model::SetWithData,
     ir::{self, Index, SetData, SetExpr, SetVal, SetVals},
     matrix::{
-        constraints::{IdxValMap, domain_to_indexes, idx_get},
+        constraint::{IdxValMap, domain_to_indexes, idx_get},
         lookup::Lookups,
     },
 };

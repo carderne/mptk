@@ -1,14 +1,13 @@
+//! # mptk
+//!
+//! `mptk` is a GMPL parser and matrix generator.
+
 use std::process::ExitCode;
 use std::time::Instant;
 
 use clap::{Parser, Subcommand};
 
-// extern crate mptk;
-use mptk::ir::model::ModelWithData;
-use mptk::matrix::compile_mps;
-use mptk::mps::print_mps;
-use mptk::util::stem;
-use mptk::{load_data, load_model};
+use mptk::{generate_matrix, load_model_and_data, matrix_to_mps, merge_model, stem};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -48,50 +47,34 @@ fn main() -> ExitCode {
             data_path,
             verbose,
         } => {
-            let _ = check(path, data_path, verbose);
+            let entries = load_model_and_data(path, data_path.as_deref());
+            let model = merge_model(entries);
+
+            // Print the model
+            if *verbose {
+                println!("{:#?}", model);
+            }
             set_exit()
         }
         Commands::Comp { path, data_path } => {
             let t_total = Instant::now();
 
             let t0 = Instant::now();
-            let model = check(path, data_path, &false).unwrap();
+            let entries = load_model_and_data(path, data_path.as_deref());
+            let model = merge_model(entries);
 
             eprintln!("load: {:?}", t0.elapsed());
 
             let t1 = Instant::now();
-            let compiled = compile_mps(model);
+            let compiled = generate_matrix(model);
             eprintln!("compile: {:?}", t1.elapsed());
 
             let t2 = Instant::now();
-            print_mps(compiled, stem(path));
+            matrix_to_mps(compiled, stem(path));
             eprintln!("print: {:?}", t2.elapsed());
 
             eprintln!("total: {:?}", t_total.elapsed());
             set_exit()
         }
     }
-}
-
-fn check(
-    path: &str,
-    data_path: &Option<String>,
-    verbose: &bool,
-) -> Result<ModelWithData, ExitCode> {
-    let model_entries = load_model(path);
-    let data_entries = if let Some(data_path) = data_path {
-        load_data(data_path)
-    } else {
-        vec![]
-    };
-    let entries = [&model_entries[..], &data_entries[..]].concat();
-
-    // Build the model with matched data
-    let model = ModelWithData::from_entries(entries);
-
-    // Print the model
-    if *verbose {
-        println!("{:#?}", model);
-    }
-    Ok(model)
 }

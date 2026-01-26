@@ -7,9 +7,9 @@ use crate::{
     ir::{
         self,
         model::{ParamWithData, SetWithData},
+        op::Bounds,
     },
     matrix::{
-        bound::Bounds,
         param::{Param, resolve_param},
         set::SetCont,
     },
