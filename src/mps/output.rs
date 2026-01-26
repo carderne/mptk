@@ -1,5 +1,6 @@
-use crate::mps::{
-    BoundsMap, ColsMap, Compiled, Index, RowsMap, bound::BoundsOp, constraints::RowType,
+use crate::{
+    gmpl::resolve,
+    mps::{BoundsMap, ColsMap, Compiled, Index, RowsMap, bound::BoundsOp, constraints::RowType},
 };
 
 pub fn print_mps(compiled: Compiled, model_name: &str) {
@@ -15,6 +16,7 @@ fn print_rows(rows: &RowsMap) {
     println!("ROWS");
     for ((name, idx), (dir, _)) in rows {
         let idx = format_index_vals(idx);
+        let name = resolve(*name);
         println!(" {dir}  {name}{idx}")
     }
 }
@@ -26,6 +28,8 @@ fn print_cols(cols: ColsMap) {
             if val != 0.0 {
                 let var_idx = format_index_vals(&var_index);
                 let con_idx = format_index_vals(&con_index);
+                let var_name = resolve(var_name);
+                let con_name = resolve(con_name);
                 println!(" {}{} {}{} {}", var_name, var_idx, con_name, con_idx, val);
             }
         }
@@ -37,13 +41,14 @@ fn print_rhs(rows: &RowsMap) {
     for ((name, idx), (row_type, val)) in rows {
         // Skip N-type rows (objective function) - they should never have RHS
         // TODO: why were these getting printed? Small 0.00.. value?
-        if **row_type == RowType::N {
+        if *row_type == RowType::N {
             continue;
         }
         // MPS format assumes RHS is 0 if not provided
         // NB: -0 and +0 are different values
         if *val != 0.0 {
             let idx = format_index_vals(idx);
+            let name = resolve(*name);
             println!(" RHS1 {name}{idx} {val}");
         }
     }
@@ -62,6 +67,8 @@ fn print_bounds(bounds: BoundsMap) {
             Some(val) => val.to_string(),
             None => String::new(),
         };
+
+        let var_name = resolve(var_name);
 
         println!(
             " {} BND1 {}{} {}",

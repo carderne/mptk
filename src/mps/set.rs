@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    gmpl::{self, Index, SetData, SetExpr, SetVal, SetVals, intern},
+    gmpl::{self, Index, SetData, SetExpr, SetVal, SetVals},
     model::SetWithData,
     mps::{
         constraints::{IdxValMap, domain_to_indexes, idx_get},
@@ -53,7 +53,13 @@ impl SetCont {
                     let idx_val_map: IdxValMap = dims
                         .iter()
                         .zip(index.iter().cloned())
-                        .map(|(part, idx_val)| (intern(&part.id), idx_val))
+                        .map(|(part, idx_val)| {
+                            (
+                                part.id
+                                    .expect("need id in set domain when using set domain expr"),
+                                idx_val,
+                            )
+                        })
                         .collect();
                     domain_to_indexes(domain, lookups, &idx_val_map)
                         .iter()
@@ -67,7 +73,12 @@ impl SetCont {
                     let idx_val_map: IdxValMap = dims
                         .iter()
                         .zip(index.iter().cloned())
-                        .map(|(part, idx_val)| (intern(&part.id), idx_val))
+                        .map(|(part, idx_val)| {
+                            (
+                                part.id.expect("need id in set domain when using set expr"),
+                                idx_val,
+                            )
+                        })
                         .collect();
 
                     let sets: Vec<Vec<SetVal>> = set_math

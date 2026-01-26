@@ -6,8 +6,10 @@ mod param;
 mod set;
 
 use std::sync::Arc;
+use std::time::Instant;
 
 use indexmap::IndexMap;
+use lasso::Spur;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use smallvec::SmallVec;
 
@@ -18,14 +20,14 @@ use crate::mps::constraints::{Pair, RowType, algebra, domain_to_indexes, get_ind
 use crate::mps::lookup::Lookups;
 
 //                    var     var_index                 con     con_index       val
-type ColsMap = IndexMap<(Arc<String>, Arc<Index>), IndexMap<(Arc<String>, Arc<Index>), f64>>;
+type ColsMap = IndexMap<(Spur, Arc<Index>), IndexMap<(Spur, Arc<Index>), f64>>;
 //                      con     con_index        type     rhs
-type RowsMap = IndexMap<(Arc<String>, Arc<Index>), (Arc<RowType>, f64)>;
+type RowsMap = IndexMap<(Spur, Arc<Index>), (RowType, f64)>;
 //                      var     var_index       bounds
-type BoundsMap = IndexMap<(Arc<String>, Arc<Index>), Arc<Bounds>>;
+type BoundsMap = IndexMap<(Spur, Arc<Index>), Arc<Bounds>>;
 
 struct ConstraintOrObj {
-    name: String,
+    name: Spur,
     domain: Option<Domain>,
     row_type: RowType,
     lhs: Expr,
@@ -39,9 +41,9 @@ pub struct Compiled {
 }
 
 struct Con {
-    name: Arc<String>,
+    name: Spur,
     idx: Arc<Index>,
-    row_type: Arc<RowType>,
+    row_type: RowType,
     rhs: f64,
     pairs: Vec<Pair>,
 }
@@ -55,11 +57,25 @@ pub fn compile_mps(model: ModelWithData) -> Compiled {
         constraints,
     } = model;
 
+    let t0 = Instant::now();
     let lookups = Lookups::from_model(sets, vars, pars);
+    eprintln!("  lookups: {:?}", t0.elapsed());
+
+    let t0 = Instant::now();
     let all_constraints = prep_constraints(objective, constraints);
+    eprintln!("  prep: {:?}", t0.elapsed());
+
+    let t0 = Instant::now();
     let cons = build_constraints(all_constraints, &lookups);
+    eprintln!("  cons: {:?}", t0.elapsed());
+
+    let t0 = Instant::now();
     let (cols, rows) = build_cols_and_rows(cons);
+    eprintln!("  cols/rows: {:?}", t0.elapsed());
+
+    let t0 = Instant::now();
     let bounds = gen_bounds(&cols, lookups);
+    eprintln!("  bounds: {:?}", t0.elapsed());
 
     Compiled { cols, rows, bounds }
 }
@@ -75,11 +91,11 @@ fn build_cols_and_rows(cons: Vec<Con>) -> (ColsMap, RowsMap) {
         pairs,
     } in cons
     {
-        rows.insert((name.clone(), idx.clone()), (row_type, rhs));
+        rows.insert((name, idx.clone()), (row_type, rhs));
         for pair in pairs {
-            cols.entry((Arc::new(pair.var), Arc::new(pair.index)))
+            cols.entry((pair.var, Arc::new(pair.index)))
                 .or_default()
-                .entry((name.clone(), idx.clone()))
+                .entry((name, idx.clone()))
                 // With big sums, the same Var can appear multiple times, so we must accumulate the
                 // coefficients
                 .and_modify(|v| *v += pair.coeff)
@@ -130,8 +146,7 @@ fn build_constraints(constraints: Vec<ConstraintOrObj>, lookups: &Lookups) -> Ve
                  lhs,
                  rhs,
              }| {
-                let name = Arc::new(name);
-                let row_type = Arc::new(row_type);
+                // let row_type = Arc::new(row_type);
 
                 let (indexes, parts) = domain
                     .map(|d| (domain_to_indexes(&d, lookups, &SmallVec::new()), d.parts))
@@ -146,9 +161,9 @@ fn build_constraints(constraints: Vec<ConstraintOrObj>, lookups: &Lookups) -> Ve
                         let rhs = recurse(&rhs, lookups, &idx_val_map);
                         let (pairs, rhs_total) = algebra(lhs, rhs);
                         Con {
-                            name: name.clone(),
+                            name,
                             idx: con_index,
-                            row_type: row_type.clone(),
+                            row_type,
                             rhs: rhs_total,
                             pairs,
                         }

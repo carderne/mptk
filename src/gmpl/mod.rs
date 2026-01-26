@@ -39,7 +39,7 @@ pub fn resolve(spur: Spur) -> &'static str {
 /// Variable declaration
 #[derive(Clone, Debug)]
 pub struct Var {
-    pub name: String,
+    pub name: Spur,
     pub domain: Option<Domain>,
     pub bounds: Option<VarBounds>,
     pub param_type: Option<ParamType>,
@@ -47,14 +47,14 @@ pub struct Var {
 
 impl Var {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
-        let mut name = String::new();
+        let mut name: Option<Spur> = None;
         let mut domain = None;
         let mut bounds = None;
         let mut param_type = None;
 
         for pair in entry.into_inner() {
             match pair.as_rule() {
-                Rule::name => name = pair.as_str().to_string(),
+                Rule::name => name = Some(intern(pair.as_str())),
                 Rule::domain => domain = Some(Domain::from_entry(pair)),
                 Rule::var_bounds => bounds = Some(VarBounds::from_entry(pair)),
                 Rule::param_type => param_type = Some(ParamType::from_entry(pair)),
@@ -63,7 +63,7 @@ impl Var {
         }
 
         Self {
-            name,
+            name: name.unwrap(),
             domain,
             bounds,
             param_type,
@@ -73,7 +73,7 @@ impl Var {
 
 impl fmt::Display for Var {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "var {}", self.name)?;
+        write!(f, "var {}", resolve(self.name))?;
         if self.domain.is_some() {
             write!(f, " <domain>")?;
         }
@@ -90,7 +90,7 @@ impl fmt::Display for Var {
 /// Parameter declaration
 #[derive(Clone, Debug)]
 pub struct Param {
-    pub name: String,
+    pub name: Spur,
     pub domain: Option<Domain>,
     pub param_type: Option<ParamType>,
     pub conditions: Vec<ParamCondition>,
@@ -101,7 +101,7 @@ pub struct Param {
 
 impl Param {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
-        let mut name = String::new();
+        let mut name: Option<Spur> = None;
         let mut domain = None;
         let mut param_type = None;
         let mut conditions = Vec::new();
@@ -111,7 +111,7 @@ impl Param {
 
         for pair in entry.into_inner() {
             match pair.as_rule() {
-                Rule::name => name = pair.as_str().to_string(),
+                Rule::name => name = Some(intern(pair.as_str())),
                 Rule::domain => domain = Some(Domain::from_entry(pair)),
                 Rule::param_type => param_type = Some(ParamType::from_entry(pair)),
                 Rule::param_condition => conditions.push(ParamCondition::from_entry(pair)),
@@ -134,7 +134,7 @@ impl Param {
         }
 
         Self {
-            name,
+            name: name.unwrap(),
             domain,
             param_type,
             conditions,
@@ -147,7 +147,7 @@ impl Param {
 
 impl fmt::Display for Param {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "param {}", self.name)?;
+        write!(f, "param {}", resolve(self.name))?;
         if self.domain.is_some() {
             write!(f, " <domain>")?;
         }
@@ -173,7 +173,7 @@ impl fmt::Display for Param {
 /// Set declaration
 #[derive(Clone, Debug)]
 pub struct Set {
-    pub name: String,
+    pub name: Spur,
     pub dims: Vec<SetDomainPart>,
     pub within: Option<String>,
     pub cross: Option<String>,
@@ -182,7 +182,7 @@ pub struct Set {
 
 impl Set {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
-        let mut name = String::new();
+        let mut name: Option<Spur> = None;
         let mut dims = Vec::new();
         let mut within = None;
         let mut cross = None;
@@ -190,7 +190,7 @@ impl Set {
 
         for pair in entry.into_inner() {
             match pair.as_rule() {
-                Rule::id => name = pair.as_str().to_string(),
+                Rule::id => name = Some(intern(pair.as_str())),
                 Rule::set_domain => {
                     for inner in pair.into_inner() {
                         if inner.as_rule() == Rule::set_domain_part {
@@ -213,7 +213,7 @@ impl Set {
         }
 
         Self {
-            name,
+            name: name.unwrap(),
             dims,
             within,
             cross,
@@ -224,30 +224,33 @@ impl Set {
 
 impl fmt::Display for Set {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "set {}", self.name)
+        write!(f, "set {}", resolve(self.name))
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct SetDomainPart {
-    pub id: String,
-    pub set: String,
+    pub id: Option<Spur>,
+    pub set: Spur,
 }
 
 impl SetDomainPart {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
-        let mut id = String::new();
-        let mut set = String::new();
+        let mut id: Option<Spur> = None;
+        let mut set: Option<Spur> = None;
 
         for pair in entry.into_inner() {
             match pair.as_rule() {
-                Rule::id => id = pair.as_str().to_string(),
-                Rule::domain_set => set = pair.as_str().to_string(),
+                Rule::id => id = Some(intern(pair.as_str())),
+                Rule::domain_set => set = Some(intern(pair.as_str())),
                 _ => {}
             }
         }
 
-        Self { id, set }
+        Self {
+            id,
+            set: set.unwrap(),
+        }
     }
 }
 
@@ -288,20 +291,20 @@ impl SetMath {
 #[derive(Clone, Debug)]
 pub struct Objective {
     pub sense: ObjSense,
-    pub name: String,
+    pub name: Spur,
     pub expr: Expr,
 }
 
 impl Objective {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
         let mut sense = ObjSense::Minimize;
-        let mut name = String::new();
+        let mut name: Option<Spur> = None;
         let mut expr = None;
 
         for pair in entry.into_inner() {
             match pair.as_rule() {
                 Rule::obj_sense => sense = ObjSense::from_entry(pair),
-                Rule::id => name = pair.as_str().to_string(),
+                Rule::id => name = Some(intern(pair.as_str())),
                 Rule::expr => expr = Some(Expr::from_entry(pair)),
                 _ => {}
             }
@@ -309,7 +312,7 @@ impl Objective {
 
         Self {
             sense,
-            name,
+            name: name.unwrap(),
             expr: expr.unwrap(),
         }
     }
@@ -317,27 +320,27 @@ impl Objective {
 
 impl fmt::Display for Objective {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} {}: <expr>", self.sense, self.name)
+        write!(f, "{} {}: <expr>", self.sense, resolve(self.name))
     }
 }
 
 /// Constraint
 #[derive(Clone, Debug)]
 pub struct Constraint {
-    pub name: String,
+    pub name: Spur,
     pub domain: Option<Domain>,
     pub expr: ConstraintExpr,
 }
 
 impl Constraint {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
-        let mut name = String::new();
+        let mut name: Option<Spur> = None;
         let mut domain = None;
         let mut constraint_expr = None;
 
         for pair in entry.into_inner() {
             match pair.as_rule() {
-                Rule::name => name = pair.as_str().to_string(),
+                Rule::name => name = Some(intern(pair.as_str())),
                 Rule::domain => domain = Some(Domain::from_entry(pair)),
                 Rule::constraint_expr => constraint_expr = Some(ConstraintExpr::from_entry(pair)),
                 _ => {}
@@ -345,7 +348,7 @@ impl Constraint {
         }
 
         Self {
-            name,
+            name: name.unwrap(),
             domain,
             expr: constraint_expr.unwrap(),
         }
@@ -354,7 +357,7 @@ impl Constraint {
 
 impl fmt::Display for Constraint {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "constraint {}", self.name)?;
+        write!(f, "constraint {}", resolve(self.name))?;
         if self.domain.is_some() {
             write!(f, " <domain>")?;
         }
@@ -365,20 +368,20 @@ impl fmt::Display for Constraint {
 /// Data set values
 #[derive(Clone, Debug)]
 pub struct SetData {
-    pub name: String,
+    pub name: Spur,
     pub index: Index,
     pub values: SetVals,
 }
 
 impl SetData {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
-        let mut name = String::new();
+        let mut name: Option<Spur> = None;
         let mut index = smallvec![];
         let mut values = Vec::new();
 
         for pair in entry.into_inner() {
             match pair.as_rule() {
-                Rule::id => name = pair.as_str().to_string(),
+                Rule::id => name = Some(intern(pair.as_str())),
                 Rule::index => {
                     for inner in pair.into_inner() {
                         if inner.as_rule() == Rule::set_val {
@@ -437,7 +440,7 @@ impl SetData {
         }
 
         Self {
-            name,
+            name: name.unwrap(),
             index,
             values: SetVals(values),
         }
@@ -449,7 +452,7 @@ impl fmt::Display for SetData {
         write!(
             f,
             "data: set {} := <{} values>",
-            self.name,
+            resolve(self.name),
             self.values.len()
         )
     }
@@ -484,20 +487,20 @@ pub enum ParamDataBody {
 
 #[derive(Clone, Debug)]
 pub struct ParamData {
-    pub name: String,
+    pub name: Spur,
     pub default: Option<f64>,
     pub body: Option<ParamDataBody>,
 }
 
 impl ParamData {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
-        let mut name = String::new();
+        let mut name: Option<Spur> = None;
         let mut default = None;
         let mut body = None;
 
         for pair in entry.into_inner() {
             match pair.as_rule() {
-                Rule::id => name = pair.as_str().to_string(),
+                Rule::id => name = Some(intern(pair.as_str())),
                 Rule::param_data_default => default = Some(pair.as_str().parse().unwrap()),
                 Rule::param_data_body => {
                     let mut inner_pairs = pair.into_inner();
@@ -525,7 +528,7 @@ impl ParamData {
         }
 
         Self {
-            name,
+            name: name.unwrap(),
             default,
             body,
         }
@@ -534,7 +537,7 @@ impl ParamData {
 
 impl fmt::Display for ParamData {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "data: param {}", self.name)?;
+        write!(f, "data: param {}", resolve(self.name))?;
         if self.default.is_some() {
             write!(f, " default <value>")?;
         }
@@ -1144,7 +1147,7 @@ impl fmt::Display for Domain {
 #[derive(Clone, Debug)]
 pub struct DomainPart {
     pub var: DomainPartVar,
-    pub set: String,
+    pub set: Spur,
     pub subscript: Subscript,
 }
 
@@ -1152,7 +1155,7 @@ impl DomainPart {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
         let mut var = DomainPartVar::Single(intern(""));
         let mut subscript = Subscript::default();
-        let mut set = String::new();
+        let mut set: Option<Spur> = None;
 
         for pair in entry.into_inner() {
             match pair.as_rule() {
@@ -1174,7 +1177,7 @@ impl DomainPart {
                 Rule::subscript => {
                     subscript = Subscript::from_entry(pair);
                 }
-                Rule::domain_set => set = pair.as_str().to_string(),
+                Rule::domain_set => set = Some(intern(pair.as_str())),
                 _ => {}
             }
         }
@@ -1182,14 +1185,14 @@ impl DomainPart {
         Self {
             var,
             subscript,
-            set,
+            set: set.unwrap(),
         }
     }
 }
 
 impl fmt::Display for DomainPart {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} in {}", self.var, self.set)
+        write!(f, "{} in {}", self.var, resolve(self.set))
     }
 }
 
@@ -1323,30 +1326,33 @@ impl fmt::Display for BoolOp {
 /// Variable with optional subscript
 #[derive(Clone, Debug)]
 pub struct VarSubscripted {
-    pub var: String,
+    pub var: Spur,
     pub subscript: Subscript,
 }
 
 impl VarSubscripted {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
-        let mut var = String::new();
+        let mut var: Option<Spur> = None;
         let mut subscript = Subscript::default();
 
         for pair in entry.into_inner() {
             match pair.as_rule() {
-                Rule::var_ref => var = pair.as_str().to_string(),
+                Rule::var_ref => var = Some(intern(pair.as_str())),
                 Rule::subscript => subscript = Subscript::from_entry(pair),
                 _ => {}
             }
         }
 
-        Self { var, subscript }
+        Self {
+            var: var.unwrap(),
+            subscript,
+        }
     }
 }
 
 impl fmt::Display for VarSubscripted {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.var)?;
+        write!(f, "{}", resolve(self.var))?;
         if !self.subscript.is_empty() {
             write!(f, "[...]")?;
         }
@@ -1476,24 +1482,27 @@ impl fmt::Display for FuncSum {
 #[derive(Clone, Debug)]
 pub struct FuncMin {
     pub domain: Domain,
-    pub var: String,
+    pub var: Spur,
 }
 
 impl FuncMin {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
         let mut domain = None;
-        let mut var = String::new();
+        let mut var: Option<Spur> = None;
 
         for pair in entry.into_inner() {
             match pair.as_rule() {
                 Rule::domain => domain = Some(Domain::from_entry(pair)),
-                Rule::func_var => var = pair.as_str().to_string(),
+                Rule::func_var => var = Some(intern(pair.as_str())),
                 _ => {}
             }
         }
         let domain = domain.unwrap();
 
-        Self { domain, var }
+        Self {
+            domain,
+            var: var.unwrap(),
+        }
     }
 }
 
@@ -1507,24 +1516,27 @@ impl fmt::Display for FuncMin {
 #[derive(Clone, Debug)]
 pub struct FuncMax {
     pub domain: Domain,
-    pub var: String,
+    pub var: Spur,
 }
 
 impl FuncMax {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
         let mut domain = None;
-        let mut var = String::new();
+        let mut var: Option<Spur> = None;
 
         for pair in entry.into_inner() {
             match pair.as_rule() {
                 Rule::domain => domain = Some(Domain::from_entry(pair)),
-                Rule::func_var => var = pair.as_str().to_string(),
+                Rule::func_var => var = Some(intern(pair.as_str())),
                 _ => {}
             }
         }
         let domain = domain.unwrap();
 
-        Self { domain, var }
+        Self {
+            domain,
+            var: var.unwrap(),
+        }
     }
 }
 

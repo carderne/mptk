@@ -9,8 +9,8 @@ pub fn gen_bounds(cols: &ColsMap, lookups: Lookups) -> BoundsMap {
     cols.iter()
         .map(|((var_name, var_idx), _)| {
             (
-                (var_name.clone(), var_idx.clone()),
-                lookups.var_map.get(var_name.as_str()).unwrap().clone(),
+                (*var_name, var_idx.clone()),
+                lookups.var_map.get(var_name).unwrap().clone(),
             )
         })
         .collect()

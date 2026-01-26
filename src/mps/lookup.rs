@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use indexmap::IndexMap;
+use lasso::Spur;
 
 use crate::{
     gmpl,
@@ -13,9 +14,9 @@ use crate::{
 };
 
 pub struct Lookups {
-    pub set_map: IndexMap<String, SetCont>,
-    pub var_map: HashMap<String, Arc<Bounds>>,
-    pub par_map: HashMap<String, Param>,
+    pub set_map: IndexMap<Spur, SetCont>,
+    pub var_map: HashMap<Spur, Arc<Bounds>>,
+    pub par_map: HashMap<Spur, Param>,
 }
 
 impl Lookups {
@@ -27,7 +28,7 @@ impl Lookups {
         Lookups {
             set_map: sets
                 .into_iter()
-                .map(|set| (set.decl.name.clone(), SetCont::from(set)))
+                .map(|set| (set.decl.name, SetCont::from(set)))
                 .collect(),
             var_map: vars
                 .into_iter()
@@ -35,7 +36,7 @@ impl Lookups {
                 .collect(),
             par_map: pars
                 .into_iter()
-                .map(|param| (param.decl.name.clone(), resolve_param(param)))
+                .map(|param| (param.decl.name, resolve_param(param)))
                 .collect(),
         }
     }

@@ -14,7 +14,7 @@ use smallvec::SmallVec;
 
 #[derive(Clone, Debug)]
 pub struct Pair {
-    pub var: String,
+    pub var: Spur,
     pub index: Index,
     pub coeff: f64,
 }
@@ -58,7 +58,7 @@ pub fn recurse(expr: &Expr, lookups: &Lookups, idx_val_map: &IdxValMap) -> Vec<T
                 vec![Term::Pair(Pair {
                     coeff: 1.0,
                     index,
-                    var: name.clone(),
+                    var: *name,
                 })]
             } else if let Some(param) = lookups.par_map.get(name) {
                 match &param.data {
@@ -69,7 +69,7 @@ pub fn recurse(expr: &Expr, lookups: &Lookups, idx_val_map: &IdxValMap) -> Vec<T
                         } else {
                             match &param.default {
                                 Some(expr) => recurse(expr, lookups, idx_val_map),
-                                None => panic!("tried to get uninitialized param: {}", &name),
+                                None => panic!("tried to get uninitialized param"),
                             }
                         }
                     }
@@ -79,13 +79,10 @@ pub fn recurse(expr: &Expr, lookups: &Lookups, idx_val_map: &IdxValMap) -> Vec<T
                     }
                     ParamVal::None => match &param.default {
                         Some(expr) => recurse(expr, lookups, idx_val_map),
-                        None => panic!("tried to get uninitialized param: {}", name),
+                        None => panic!("tried to get uninitialized param"),
                     },
                 }
-            } else if let Some(index_val) = INTERNER
-                .get(name)
-                .and_then(|spur| idx_get(idx_val_map, spur))
-            {
+            } else if let Some(index_val) = idx_get(idx_val_map, *name) {
                 // Use the current index value (eg y=>2014) as an actual value
                 // Mostly (only?) used in domain condition expressions
                 match index_val {
@@ -94,10 +91,7 @@ pub fn recurse(expr: &Expr, lookups: &Lookups, idx_val_map: &IdxValMap) -> Vec<T
                     SetVal::Tuple(_) => panic!("tuple set not allowed in var subscript"),
                 }
             } else {
-                panic!(
-                    "symbol does not point to a valid var or param. symbol: {} // constraint: {}",
-                    &name, &expr,
-                );
+                panic!("symbol does not point to a valid var or param",);
             }
         }
         Expr::FuncSum(func) => expand_sum(&func.operand, &func.domain, lookups, idx_val_map),
@@ -214,7 +208,7 @@ pub fn recurse(expr: &Expr, lookups: &Lookups, idx_val_map: &IdxValMap) -> Vec<T
     }
 }
 
-#[derive(PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum RowType {
     L,
     E,
@@ -293,11 +287,10 @@ pub fn domain_to_indexes(
                         .get(&part.set)
                         .unwrap()
                         .resolve(&concrete_idx, lookups)
-                        .0
-                        .into_iter()
+                        .iter()
                         .map(|val| {
                             let mut new_idx = existing.clone();
-                            new_idx.push(val);
+                            new_idx.push(*val);
                             new_idx
                         })
                         .collect::<Vec<_>>()

@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::gmpl::{Constraint, Entry, Objective, Param, ParamData, Set, SetData, Var};
+use lasso::Spur;
+
+use crate::gmpl::{Constraint, Entry, Objective, Param, ParamData, Set, SetData, Var, resolve};
 
 /// A set declaration with optional data
 #[derive(Clone, Debug)]
@@ -100,10 +102,10 @@ impl ModelWithData {
         }
 
         // Group data sets by name
-        let mut data_set_map: HashMap<String, Vec<SetData>> = HashMap::new();
+        let mut data_set_map: HashMap<Spur, Vec<SetData>> = HashMap::new();
         for data_set in data_sets {
             data_set_map
-                .entry(data_set.name.clone())
+                .entry(data_set.name)
                 .or_default()
                 .push(data_set);
         }
@@ -117,12 +119,15 @@ impl ModelWithData {
 
         // Check for orphaned data sets
         if let Some((name, _)) = data_set_map.into_iter().next() {
-            panic!("Data set '{}' has no matching model declaration", name);
+            panic!(
+                "Data set '{}' has no matching model declaration",
+                resolve(name)
+            );
         }
 
-        let mut param_map: HashMap<String, Param> = HashMap::new();
+        let mut param_map: HashMap<Spur, Param> = HashMap::new();
         for param in params {
-            param_map.insert(param.name.clone(), param);
+            param_map.insert(param.name, param);
         }
 
         // Match data params to model params
@@ -136,7 +141,7 @@ impl ModelWithData {
             } else {
                 panic!(
                     "Data param '{}' has no matching model declaration",
-                    data_param.name
+                    resolve(data_param.name)
                 );
             }
         }
