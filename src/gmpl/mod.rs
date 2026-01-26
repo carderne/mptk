@@ -24,7 +24,7 @@ static PRATT_PARSER: LazyLock<PrattParser<Rule>> = LazyLock::new(|| {
 pub static INTERNER: LazyLock<ThreadedRodeo> = LazyLock::new(ThreadedRodeo::default);
 
 // Intern a string (thread-safe)
-fn intern(s: &str) -> Spur {
+pub fn intern(s: &str) -> Spur {
     INTERNER.get_or_intern(s)
 }
 
@@ -1147,7 +1147,7 @@ pub struct DomainPart {
 
 impl DomainPart {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
-        let mut var = DomainPartVar::Single(String::new());
+        let mut var = DomainPartVar::Single(intern(""));
         let mut subscript = Subscript::default();
         let mut set = String::new();
 
@@ -1156,14 +1156,12 @@ impl DomainPart {
                 Rule::domain_var => {
                     let inner = pair.into_inner().next().unwrap();
                     var = match inner.as_rule() {
-                        Rule::domain_var_single => {
-                            DomainPartVar::Single(inner.as_str().to_string())
-                        }
+                        Rule::domain_var_single => DomainPartVar::Single(intern(inner.as_str())),
                         Rule::domain_var_tuple => {
-                            let ids: Vec<String> = inner
+                            let ids: Vec<Spur> = inner
                                 .into_inner()
                                 .filter(|p| p.as_rule() == Rule::id)
-                                .map(|p| p.as_str().to_string())
+                                .map(|p| intern(p.as_str()))
                                 .collect();
                             DomainPartVar::Tuple(ids)
                         }
@@ -1194,15 +1192,18 @@ impl fmt::Display for DomainPart {
 
 #[derive(Clone, Debug)]
 pub enum DomainPartVar {
-    Single(String),
-    Tuple(Vec<String>),
+    Single(Spur),
+    Tuple(Vec<Spur>),
 }
 
 impl fmt::Display for DomainPartVar {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            DomainPartVar::Single(s) => write!(f, "{}", s),
-            DomainPartVar::Tuple(v) => write!(f, "({})", v.join(", ")),
+            DomainPartVar::Single(s) => write!(f, "{}", resolve(*s)),
+            DomainPartVar::Tuple(v) => {
+                let strs: Vec<&str> = v.iter().map(|s| resolve(*s)).collect();
+                write!(f, "({})", strs.join(", "))
+            }
         }
     }
 }
@@ -1403,18 +1404,18 @@ impl Subscript {
 
 #[derive(Clone, Debug)]
 pub struct SubscriptPart {
-    pub var: String,
+    pub var: Spur,
     pub shift: Option<SubscriptShift>,
 }
 
 impl SubscriptPart {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
-        let mut var = String::new();
+        let mut var = intern("");
         let mut shift = None;
 
         for pair in entry.into_inner() {
             match pair.as_rule() {
-                Rule::id => var = pair.as_str().to_string(),
+                Rule::id => var = intern(pair.as_str()),
                 Rule::subscript_shift => shift = Some(SubscriptShift::from_entry(pair)),
                 _ => {}
             }
@@ -1426,7 +1427,7 @@ impl SubscriptPart {
 
 impl fmt::Display for SubscriptPart {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.var)?;
+        write!(f, "{}", resolve(self.var))?;
         if let Some(shift) = &self.shift {
             write!(f, "{}", shift)?;
         }

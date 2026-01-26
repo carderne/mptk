@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use std::fmt;
 
+use crate::gmpl::INTERNER;
 use crate::gmpl::LogicExpr;
 use crate::gmpl::{
     BoolOp, Domain, DomainPart, DomainPartVar, Expr, Index, MathOp, RelOp, SetVal, SetValTerminal,
@@ -10,6 +10,7 @@ use crate::mps::lookup::Lookups;
 use crate::mps::param::ParamVal;
 use itertools::Itertools;
 use lasso::Spur;
+use smallvec::SmallVec;
 
 #[derive(Clone, Debug)]
 pub struct Pair {
@@ -28,7 +29,21 @@ pub enum Term {
 }
 
 //                       index   index value
-type IdxValMap = HashMap<String, SetVal>;
+pub type IdxValMap = SmallVec<[(Spur, SetVal); 8]>;
+
+// Helper function to get a value from IdxValMap
+pub fn idx_get(map: &IdxValMap, key: Spur) -> Option<&SetVal> {
+    map.iter().find(|(k, _)| *k == key).map(|(_, v)| v)
+}
+
+// Helper to extend one IdxValMap with another
+fn idx_extend(map: &mut IdxValMap, other: &IdxValMap) {
+    for (k, v) in other.iter() {
+        if !map.iter().any(|(mk, _)| *mk == *k) {
+            map.push((*k, v.clone()));
+        }
+    }
+}
 
 pub fn recurse(expr: &Expr, lookups: &Lookups, idx_val_map: &IdxValMap) -> Vec<Term> {
     match expr {
@@ -67,7 +82,10 @@ pub fn recurse(expr: &Expr, lookups: &Lookups, idx_val_map: &IdxValMap) -> Vec<T
                         None => panic!("tried to get uninitialized param: {}", name),
                     },
                 }
-            } else if let Some(index_val) = idx_val_map.get(name) {
+            } else if let Some(index_val) = INTERNER
+                .get(name)
+                .and_then(|spur| idx_get(idx_val_map, spur))
+            {
                 // Use the current index value (eg y=>2014) as an actual value
                 // Mostly (only?) used in domain condition expressions
                 match index_val {
@@ -270,7 +288,7 @@ pub fn domain_to_indexes(
             for part in parts {
                 cartesian = Box::new(cartesian.flat_map(|existing| {
                     let mut idx_map = get_index_map(parts, &existing);
-                    idx_map.extend(idx_val_map.clone());
+                    idx_extend(&mut idx_map, idx_val_map);
                     let concrete_idx = concrete_index(&part.subscript, &idx_map);
 
                     lookups
@@ -294,7 +312,7 @@ pub fn domain_to_indexes(
                 None => Some(idx),
                 Some(logic) => {
                     let mut idx_map = get_index_map(parts, &idx);
-                    idx_map.extend(idx_val_map.clone());
+                    idx_extend(&mut idx_map, idx_val_map);
                     if check_domain_condition(logic, lookups, &idx_map) {
                         Some(idx)
                     } else {
@@ -356,7 +374,7 @@ fn expand_sum(
         .into_iter()
         .flat_map(|idx| {
             let mut idx_map = get_index_map(&sum_domain.parts, &idx);
-            idx_map.extend(idx_val_map.clone());
+            idx_extend(&mut idx_map, idx_val_map);
             recurse(operand, lookups, &idx_map)
         })
         .collect()
@@ -436,9 +454,9 @@ pub fn get_index_map(parts: &[DomainPart], idx: &[SetVal]) -> IdxValMap {
     parts
         .iter()
         .zip(idx.iter().cloned())
-        .flat_map(|(part, idx_val)| -> Vec<(String, SetVal)> {
+        .flat_map(|(part, idx_val)| -> SmallVec<[(Spur, SetVal); 4]> {
             match (&part.var, idx_val) {
-                (DomainPartVar::Single(s), val) => vec![(s.clone(), val)],
+                (DomainPartVar::Single(s), val) => smallvec::smallvec![(*s, val)],
                 (DomainPartVar::Tuple(vars), SetVal::Vec(vals)) => vars
                     .iter()
                     .zip(vals.iter())
@@ -447,7 +465,7 @@ pub fn get_index_map(parts: &[DomainPart], idx: &[SetVal]) -> IdxValMap {
                             SetValTerminal::Str(s) => SetVal::Str(*s),
                             SetValTerminal::Int(n) => SetVal::Int(*n),
                         };
-                        (v.clone(), set_val)
+                        (*v, set_val)
                     })
                     .collect(),
                 _ => panic!("mismatched tuple/non-tuple indexes"),
@@ -474,7 +492,7 @@ fn eval_func_minmax(
             let concrete_set_keys: Index = set_domain
                 .subscript
                 .iter()
-                .map(|k| idx_val_map.get(&k.var).unwrap().clone())
+                .map(|k| idx_get(idx_val_map, k.var).unwrap().clone())
                 .collect::<Vec<_>>()
                 .into();
             let resolved = lookups
@@ -513,8 +531,12 @@ fn concrete_index(susbcript: &Subscript, idx_val_map: &IdxValMap) -> Index {
     susbcript
         .iter()
         .map(|i| {
-            let index_val = idx_val_map.get(&i.var).unwrap_or_else(|| {
-                panic!("No idx val available at {} from {:?}", &i.var, idx_val_map)
+            let index_val = idx_get(idx_val_map, i.var).unwrap_or_else(|| {
+                panic!(
+                    "No idx val available at {} from {:?}",
+                    INTERNER.resolve(&i.var),
+                    idx_val_map
+                )
             });
             match &i.shift {
                 Some(shift) => match index_val {

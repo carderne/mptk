@@ -5,11 +5,11 @@ pub mod output;
 mod param;
 mod set;
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use indexmap::IndexMap;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use smallvec::SmallVec;
 
 use crate::gmpl::{Constraint, ConstraintExpr, Domain, Expr, Index, Objective};
 use crate::model::ModelWithData;
@@ -134,7 +134,7 @@ fn build_constraints(constraints: Vec<ConstraintOrObj>, lookups: &Lookups) -> Ve
                 let row_type = Arc::new(row_type);
 
                 let (indexes, parts) = domain
-                    .map(|d| (domain_to_indexes(&d, lookups, &HashMap::new()), d.parts))
+                    .map(|d| (domain_to_indexes(&d, lookups, &SmallVec::new()), d.parts))
                     .unwrap_or_else(|| (vec![vec![].into()], vec![]));
 
                 indexes

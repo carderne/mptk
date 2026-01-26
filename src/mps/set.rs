@@ -1,9 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    gmpl::{self, Index, SetData, SetExpr, SetVal, SetVals},
+    gmpl::{self, Index, SetData, SetExpr, SetVal, SetVals, intern},
     model::SetWithData,
-    mps::{constraints::domain_to_indexes, lookup::Lookups},
+    mps::{
+        constraints::{IdxValMap, domain_to_indexes, idx_get},
+        lookup::Lookups,
+    },
 };
 
 pub struct SetCont {
@@ -47,10 +50,10 @@ impl SetCont {
                 // This is using a Set domain expression to actually build the values for the set,
                 // rather than "get" them from one or more sets
                 SetExpr::Domain(domain) => {
-                    let idx_val_map: HashMap<String, SetVal> = dims
+                    let idx_val_map: IdxValMap = dims
                         .iter()
                         .zip(index.iter().cloned())
-                        .map(|(part, idx_val)| (part.id.clone(), idx_val))
+                        .map(|(part, idx_val)| (intern(&part.id), idx_val))
                         .collect();
                     domain_to_indexes(domain, lookups, &idx_val_map)
                         .iter()
@@ -61,10 +64,10 @@ impl SetCont {
                         .into()
                 }
                 SetExpr::SetMath(set_math) => {
-                    let idx_val_map: HashMap<String, SetVal> = dims
+                    let idx_val_map: IdxValMap = dims
                         .iter()
                         .zip(index.iter().cloned())
-                        .map(|(part, idx_val)| (part.id.clone(), idx_val))
+                        .map(|(part, idx_val)| (intern(&part.id), idx_val))
                         .collect();
 
                     let sets: Vec<Vec<SetVal>> = set_math
@@ -74,7 +77,7 @@ impl SetCont {
                             let index_concrete: Index = v
                                 .subscript
                                 .iter()
-                                .map(|i| idx_val_map.get(&i.var).unwrap().clone())
+                                .map(|i| idx_get(&idx_val_map, i.var).unwrap().clone())
                                 .collect::<Vec<_>>()
                                 .into();
                             lookups
