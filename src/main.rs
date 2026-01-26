@@ -4,9 +4,9 @@ use std::time::Instant;
 use clap::{Parser, Subcommand};
 
 // extern crate mptk;
-use mptk::model::ModelWithData;
-use mptk::mps::compile_mps;
-use mptk::mps::output::print_mps;
+use mptk::ir::model::ModelWithData;
+use mptk::matrix::compile_mps;
+use mptk::mps::print_mps;
 use mptk::util::stem;
 use mptk::{load_data, load_model};
 

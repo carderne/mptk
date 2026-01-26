@@ -1,8 +1,8 @@
 use std::fmt;
 
 use crate::{
-    gmpl,
-    mps::{BoundsMap, ColsMap, lookup::Lookups},
+    ir,
+    matrix::{BoundsMap, ColsMap, lookup::Lookups},
 };
 
 pub fn gen_bounds(cols: &ColsMap, lookups: Lookups) -> BoundsMap {
@@ -23,7 +23,7 @@ pub struct Bounds {
 }
 
 impl Bounds {
-    pub fn from_gmpl_bounds(bounds: Option<gmpl::VarBounds>) -> Self {
+    pub fn from_gmpl_bounds(bounds: Option<ir::VarBounds>) -> Self {
         match bounds {
             Some(bounds) => Bounds {
                 op: BoundsOp::from_rel_op(&bounds.op),
@@ -46,16 +46,16 @@ pub enum BoundsOp {
 }
 
 impl BoundsOp {
-    pub fn from_rel_op(op: &gmpl::RelOp) -> Self {
+    pub fn from_rel_op(op: &ir::RelOp) -> Self {
         match op {
-            gmpl::RelOp::Lt => panic!("Less than not supported"),
-            gmpl::RelOp::Le => BoundsOp::UP,
-            gmpl::RelOp::Eq => BoundsOp::FX,
-            gmpl::RelOp::EqEq => BoundsOp::FX,
-            gmpl::RelOp::Ne => panic!("Not equal not supported"),
-            gmpl::RelOp::Ne2 => panic!("Not equal not supported"),
-            gmpl::RelOp::Ge => BoundsOp::LO,
-            gmpl::RelOp::Gt => panic!("Greater than not supported"),
+            ir::RelOp::Lt => panic!("Less than not supported"),
+            ir::RelOp::Le => BoundsOp::UP,
+            ir::RelOp::Eq => BoundsOp::FX,
+            ir::RelOp::EqEq => BoundsOp::FX,
+            ir::RelOp::Ne => panic!("Not equal not supported"),
+            ir::RelOp::Ne2 => panic!("Not equal not supported"),
+            ir::RelOp::Ge => BoundsOp::LO,
+            ir::RelOp::Gt => panic!("Greater than not supported"),
         }
     }
 }

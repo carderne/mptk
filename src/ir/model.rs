@@ -3,7 +3,7 @@ use std::fmt;
 
 use lasso::Spur;
 
-use crate::gmpl::{Constraint, Entry, Objective, Param, ParamData, Set, SetData, Var, resolve};
+use crate::ir::{Constraint, Entry, Objective, Param, ParamData, Set, SetData, Var, resolve};
 
 /// A set declaration with optional data
 #[derive(Clone, Debug)]

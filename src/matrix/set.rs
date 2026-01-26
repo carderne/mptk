@@ -1,16 +1,16 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    gmpl::{self, Index, SetData, SetExpr, SetVal, SetVals},
-    model::SetWithData,
-    mps::{
+    ir::model::SetWithData,
+    ir::{self, Index, SetData, SetExpr, SetVal, SetVals},
+    matrix::{
         constraints::{IdxValMap, domain_to_indexes, idx_get},
         lookup::Lookups,
     },
 };
 
 pub struct SetCont {
-    decl: gmpl::Set,
+    decl: ir::Set,
     data: HashMap<Index, SetVals>,
 }
 

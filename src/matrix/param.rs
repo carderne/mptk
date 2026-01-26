@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::gmpl::{Expr, Index, ParamDataBody, ParamDataTarget, SetVal};
-use crate::model::ParamWithData;
+use crate::ir::model::ParamWithData;
+use crate::ir::{Expr, Index, ParamDataBody, ParamDataTarget, SetVal};
 
 pub struct Param {
     pub data: ParamVal,

@@ -1,13 +1,12 @@
 use std::fmt;
 
-use crate::gmpl::INTERNER;
-use crate::gmpl::LogicExpr;
-use crate::gmpl::{
+use crate::ir::LogicExpr;
+use crate::ir::{
     BoolOp, Domain, DomainPart, DomainPartVar, Expr, Index, MathOp, RelOp, SetVal, SetValTerminal,
     Subscript, SubscriptShift,
 };
-use crate::mps::lookup::Lookups;
-use crate::mps::param::ParamVal;
+use crate::matrix::lookup::Lookups;
+use crate::matrix::param::ParamVal;
 use itertools::Itertools;
 use lasso::Spur;
 use smallvec::SmallVec;
@@ -525,13 +524,8 @@ fn concrete_index(susbcript: &Subscript, idx_val_map: &IdxValMap) -> Index {
     susbcript
         .iter()
         .map(|i| {
-            let index_val = idx_get(idx_val_map, i.var).unwrap_or_else(|| {
-                panic!(
-                    "No idx val available at {} from {:?}",
-                    INTERNER.resolve(&i.var),
-                    idx_val_map
-                )
-            });
+            let index_val =
+                idx_get(idx_val_map, i.var).unwrap_or_else(|| panic!("No idx val available at",));
             match &i.shift {
                 Some(shift) => match index_val {
                     SetVal::Str(_) => {

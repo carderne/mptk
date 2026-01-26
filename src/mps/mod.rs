@@ -1,175 +1,101 @@
-mod bound;
-mod constraints;
-mod lookup;
-pub mod output;
-mod param;
-mod set;
+use std::io::{BufWriter, Write};
 
-use std::sync::Arc;
-use std::time::Instant;
+use crate::{
+    ir::{Index, resolve},
+    matrix::{BoundsMap, ColsMap, Compiled, RowsMap, bound::BoundsOp, constraints::RowType},
+};
 
-use indexmap::IndexMap;
-use lasso::Spur;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use smallvec::SmallVec;
+pub fn print_mps(compiled: Compiled, model_name: &str) {
+    let stdout = std::io::stdout();
+    let mut w = BufWriter::with_capacity(256 * 1024, stdout.lock());
 
-use crate::gmpl::{Constraint, ConstraintExpr, Domain, Expr, Index, Objective};
-use crate::model::ModelWithData;
-use crate::mps::bound::{Bounds, gen_bounds};
-use crate::mps::constraints::{Pair, RowType, algebra, domain_to_indexes, get_index_map, recurse};
-use crate::mps::lookup::Lookups;
-
-//                    var     var_index                 con     con_index       val
-type ColsMap = IndexMap<(Spur, Arc<Index>), IndexMap<(Spur, Arc<Index>), f64>>;
-//                      con     con_index        type     rhs
-type RowsMap = IndexMap<(Spur, Arc<Index>), (RowType, f64)>;
-//                      var     var_index       bounds
-type BoundsMap = IndexMap<(Spur, Arc<Index>), Arc<Bounds>>;
-
-struct ConstraintOrObj {
-    name: Spur,
-    domain: Option<Domain>,
-    row_type: RowType,
-    lhs: Expr,
-    rhs: Expr,
+    writeln!(w, "NAME {model_name}").unwrap();
+    write_rows(&mut w, &compiled.rows);
+    write_cols(&mut w, compiled.cols);
+    write_rhs(&mut w, &compiled.rows);
+    write_bounds(&mut w, compiled.bounds);
+    writeln!(w, "ENDATA").unwrap();
+    // BufWriter flushes on drop
 }
 
-pub struct Compiled {
-    cols: ColsMap,
-    rows: RowsMap,
-    bounds: BoundsMap,
+fn write_rows(w: &mut impl Write, rows: &RowsMap) {
+    writeln!(w, "ROWS").unwrap();
+    for ((name, idx), (dir, _)) in rows {
+        let name = resolve(*name);
+        write!(w, " {dir}  {name}").unwrap();
+        write_index_vals(w, idx);
+        writeln!(w).unwrap();
+    }
 }
 
-struct Con {
-    name: Spur,
-    idx: Arc<Index>,
-    row_type: RowType,
-    rhs: f64,
-    pairs: Vec<Pair>,
-}
-
-pub fn compile_mps(model: ModelWithData) -> Compiled {
-    let ModelWithData {
-        sets,
-        pars,
-        vars,
-        objective,
-        constraints,
-    } = model;
-
-    let t0 = Instant::now();
-    let lookups = Lookups::from_model(sets, vars, pars);
-    eprintln!("  lookups: {:?}", t0.elapsed());
-
-    let t0 = Instant::now();
-    let all_constraints = prep_constraints(objective, constraints);
-    eprintln!("  prep: {:?}", t0.elapsed());
-
-    let t0 = Instant::now();
-    let cons = build_constraints(all_constraints, &lookups);
-    eprintln!("  cons: {:?}", t0.elapsed());
-
-    let t0 = Instant::now();
-    let (cols, rows) = build_cols_and_rows(cons);
-    eprintln!("  cols/rows: {:?}", t0.elapsed());
-
-    let t0 = Instant::now();
-    let bounds = gen_bounds(&cols, lookups);
-    eprintln!("  bounds: {:?}", t0.elapsed());
-
-    Compiled { cols, rows, bounds }
-}
-
-fn build_cols_and_rows(cons: Vec<Con>) -> (ColsMap, RowsMap) {
-    let mut rows: RowsMap = IndexMap::new();
-    let mut cols: ColsMap = IndexMap::new();
-    for Con {
-        name,
-        idx,
-        row_type,
-        rhs,
-        pairs,
-    } in cons
-    {
-        rows.insert((name, idx.clone()), (row_type, rhs));
-        for pair in pairs {
-            cols.entry((pair.var, Arc::new(pair.index)))
-                .or_default()
-                .entry((name, idx.clone()))
-                // With big sums, the same Var can appear multiple times, so we must accumulate the
-                // coefficients
-                .and_modify(|v| *v += pair.coeff)
-                .or_insert(pair.coeff);
+fn write_cols(w: &mut impl Write, cols: ColsMap) {
+    writeln!(w, "COLUMNS").unwrap();
+    for ((var_name, var_index), con_map) in cols {
+        let var_name = resolve(var_name);
+        for ((con_name, con_index), val) in con_map {
+            if val != 0.0 {
+                let con_name = resolve(con_name);
+                write!(w, " {var_name}").unwrap();
+                write_index_vals(w, &var_index);
+                write!(w, " {con_name}").unwrap();
+                write_index_vals(w, &con_index);
+                writeln!(w, " {val}").unwrap();
+            }
         }
     }
-
-    (cols, rows)
 }
 
-fn prep_constraints(objective: Objective, constraints: Vec<Constraint>) -> Vec<ConstraintOrObj> {
-    let mut all: Vec<ConstraintOrObj> = constraints
-        .into_iter()
-        .map(|Constraint { name, domain, expr }| {
-            let ConstraintExpr { lhs, rhs, op } = expr;
-            ConstraintOrObj {
-                name,
-                domain,
-                row_type: RowType::from_rel_op(&op),
-                lhs,
-                rhs,
+fn write_rhs(w: &mut impl Write, rows: &RowsMap) {
+    writeln!(w, "RHS").unwrap();
+    for ((name, idx), (row_type, val)) in rows {
+        // Skip N-type rows (objective function) - they should never have RHS
+        if *row_type == RowType::N {
+            continue;
+        }
+        // MPS format assumes RHS is 0 if not provided
+        // NB: -0 and +0 are different values
+        if *val != 0.0 {
+            let name = resolve(*name);
+            write!(w, " RHS1 {name}").unwrap();
+            write_index_vals(w, idx);
+            writeln!(w, " {val}").unwrap();
+        }
+    }
+}
+
+fn write_bounds(w: &mut impl Write, bounds: BoundsMap) {
+    writeln!(w, "BOUNDS").unwrap();
+
+    for ((var_name, var_idx), bounds) in bounds {
+        if bounds.op == BoundsOp::LO && bounds.val == Some(0.0) {
+            // exclude vars with >= 0, as that is default in MPS
+            continue;
+        }
+
+        let var_name = resolve(var_name);
+        write!(w, " {} BND1 {var_name}", bounds.op).unwrap();
+        write_index_vals(w, &var_idx);
+
+        match bounds.val {
+            Some(val) => writeln!(w, " {val}").unwrap(),
+            None => writeln!(w).unwrap(),
+        };
+    }
+}
+
+/// Write index values directly to the buffer, avoiding String allocation
+#[inline]
+fn write_index_vals(w: &mut impl Write, v: &Index) {
+    if !v.is_empty() {
+        write!(w, "[").unwrap();
+        let mut first = true;
+        for item in v.iter() {
+            if !first {
+                write!(w, ",").unwrap();
             }
-        })
-        .collect();
-    let Objective {
-        name,
-        expr,
-        sense: _,
-    } = objective;
-    all.push(ConstraintOrObj {
-        name,
-        domain: None,
-        row_type: RowType::N,
-        lhs: expr,
-        rhs: Expr::Number(0.0),
-    });
-    all
-}
-
-fn build_constraints(constraints: Vec<ConstraintOrObj>, lookups: &Lookups) -> Vec<Con> {
-    constraints
-        .into_par_iter()
-        .flat_map(
-            |ConstraintOrObj {
-                 name,
-                 domain,
-                 row_type,
-                 lhs,
-                 rhs,
-             }| {
-                // let row_type = Arc::new(row_type);
-
-                let (indexes, parts) = domain
-                    .map(|d| (domain_to_indexes(&d, lookups, &SmallVec::new()), d.parts))
-                    .unwrap_or_else(|| (vec![vec![].into()], vec![]));
-
-                indexes
-                    .into_par_iter()
-                    .map(|con_index| {
-                        let con_index = Arc::new(con_index);
-                        let idx_val_map = get_index_map(&parts, &con_index);
-                        let lhs = recurse(&lhs, lookups, &idx_val_map);
-                        let rhs = recurse(&rhs, lookups, &idx_val_map);
-                        let (pairs, rhs_total) = algebra(lhs, rhs);
-                        Con {
-                            name,
-                            idx: con_index,
-                            row_type,
-                            rhs: rhs_total,
-                            pairs,
-                        }
-                    })
-                    .collect::<Vec<_>>()
-            },
-        )
-        .collect()
+            first = false;
+            write!(w, "{item}").unwrap();
+        }
+        write!(w, "]").unwrap();
+    }
 }

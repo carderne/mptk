@@ -4,9 +4,11 @@ use indexmap::IndexMap;
 use lasso::Spur;
 
 use crate::{
-    gmpl,
-    model::{ParamWithData, SetWithData},
-    mps::{
+    ir::{
+        self,
+        model::{ParamWithData, SetWithData},
+    },
+    matrix::{
         bound::Bounds,
         param::{Param, resolve_param},
         set::SetCont,
@@ -22,7 +24,7 @@ pub struct Lookups {
 impl Lookups {
     pub fn from_model(
         sets: Vec<SetWithData>,
-        vars: Vec<gmpl::Var>,
+        vars: Vec<ir::Var>,
         pars: Vec<ParamWithData>,
     ) -> Self {
         Lookups {
