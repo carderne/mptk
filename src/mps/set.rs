@@ -58,8 +58,8 @@ impl SetCont {
                     domain_to_indexes(domain, lookups, &idx_val_map)
                         .iter()
                         // TODO we're handling only the special case of a single dimension
-                        // to handle more we must check if len > 1 and then build a SetVal::Vec
-                        .map(|i| i.first().unwrap().clone())
+                        // to handle more we must check if len > 1 and then build a SetVal::Tuple
+                        .map(|i| *i.first().unwrap())
                         .collect::<Vec<_>>()
                         .into()
                 }
@@ -77,7 +77,7 @@ impl SetCont {
                             let index_concrete: Index = v
                                 .subscript
                                 .iter()
-                                .map(|i| idx_get(&idx_val_map, i.var).unwrap().clone())
+                                .map(|i| *idx_get(&idx_val_map, i.var).unwrap())
                                 .collect::<Vec<_>>()
                                 .into();
                             lookups

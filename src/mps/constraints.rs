@@ -40,7 +40,7 @@ pub fn idx_get(map: &IdxValMap, key: Spur) -> Option<&SetVal> {
 fn idx_extend(map: &mut IdxValMap, other: &IdxValMap) {
     for (k, v) in other.iter() {
         if !map.iter().any(|(mk, _)| *mk == *k) {
-            map.push((*k, v.clone()));
+            map.push((*k, *v));
         }
     }
 }
@@ -91,7 +91,7 @@ pub fn recurse(expr: &Expr, lookups: &Lookups, idx_val_map: &IdxValMap) -> Vec<T
                 match index_val {
                     SetVal::Str(val) => vec![Term::Str(*val)],
                     SetVal::Int(num) => vec![Term::Num(*num as f64)],
-                    SetVal::Vec(_) => panic!("tuple set not allowed in var subscript"),
+                    SetVal::Tuple(_) => panic!("tuple set not allowed in var subscript"),
                 }
             } else {
                 panic!(
@@ -458,7 +458,7 @@ pub fn get_index_map(parts: &[DomainPart], idx: &[SetVal]) -> IdxValMap {
         .flat_map(|(part, idx_val)| -> SmallVec<[(Spur, SetVal); 4]> {
             match (&part.var, idx_val) {
                 (DomainPartVar::Single(s), val) => smallvec::smallvec![(*s, val)],
-                (DomainPartVar::Tuple(vars), SetVal::Vec(vals)) => vars
+                (DomainPartVar::Tuple(vars), SetVal::Tuple(vals)) => vars
                     .iter()
                     .zip(vals.iter())
                     .map(|(v, sv)| {
@@ -493,7 +493,7 @@ fn eval_func_minmax(
             let concrete_set_keys: Index = set_domain
                 .subscript
                 .iter()
-                .map(|k| idx_get(idx_val_map, k.var).unwrap().clone())
+                .map(|k| *idx_get(idx_val_map, k.var).unwrap())
                 .collect::<Vec<_>>()
                 .into();
             let resolved = lookups
@@ -504,7 +504,7 @@ fn eval_func_minmax(
             let iter = resolved.iter().map(|si| match si {
                 SetVal::Str(_) => panic!("cannot use func min/max on string index"),
                 SetVal::Int(num) => *num,
-                SetVal::Vec(_) => panic!("cannot use func min/max with tuple index"),
+                SetVal::Tuple(_) => panic!("cannot use func min/max with tuple index"),
             });
             let val = if is_min { iter.min() } else { iter.max() }.unwrap();
             val as f64
@@ -548,11 +548,11 @@ fn concrete_index(susbcript: &Subscript, idx_val_map: &IdxValMap) -> Index {
                         SubscriptShift::Plus => SetVal::Int(index_num + 1),
                         SubscriptShift::Minus => SetVal::Int(index_num - 1),
                     },
-                    SetVal::Vec(_) => {
+                    SetVal::Tuple(_) => {
                         panic!("tuple set not allowed in var subscript")
                     }
                 },
-                None => index_val.clone(),
+                None => *index_val,
             }
         })
         .collect::<Vec<_>>()

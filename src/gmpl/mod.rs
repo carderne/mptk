@@ -398,7 +398,7 @@ impl SetData {
                                 }
                             }
                             Rule::set_tuples => {
-                                // Tuples: wrap in SetVal::Vec with SetValTerminal
+                                // Tuples: wrap in SetVal::Tuple with SetValTerminal
                                 for tuple in inner.into_inner() {
                                     if tuple.as_rule() == Rule::set_tuple {
                                         let tuple_vals: Vec<SetValTerminal> = tuple
@@ -419,7 +419,12 @@ impl SetData {
                                                 }
                                             })
                                             .collect();
-                                        values.push(SetVal::Vec(tuple_vals));
+                                        assert!(
+                                            tuple_vals.len() == 2,
+                                            "Only 2-element tuples supported, got {}",
+                                            tuple_vals.len()
+                                        );
+                                        values.push(SetVal::Tuple([tuple_vals[0], tuple_vals[1]]));
                                     }
                                 }
                             }
@@ -1055,14 +1060,15 @@ impl fmt::Display for Conditional {
 // ==============================
 
 /// Set val (identifier or positive integer)
-#[derive(Hash, Eq, PartialEq, Clone, Debug)]
+#[derive(Hash, Eq, PartialEq, Clone, Copy, Debug)]
 pub enum SetVal {
     Str(Spur),
     Int(u32),
-    Vec(Vec<SetValTerminal>),
+    // This will panic if there's a tuple with more than two elements
+    Tuple([SetValTerminal; 2]),
 }
 
-#[derive(Hash, Eq, PartialEq, Clone, Debug)]
+#[derive(Hash, Eq, PartialEq, Clone, Copy, Debug)]
 pub enum SetValTerminal {
     Str(Spur),
     Int(u32),
@@ -1084,10 +1090,7 @@ impl fmt::Display for SetVal {
         match self {
             SetVal::Str(s) => write!(f, "{}", resolve(*s)),
             SetVal::Int(n) => write!(f, "{}", n),
-            SetVal::Vec(v) => {
-                let items: Vec<String> = v.iter().map(|s| s.to_string()).collect();
-                write!(f, "{}", items.join(","))
-            }
+            SetVal::Tuple([a, b]) => write!(f, "{},{}", a, b),
         }
     }
 }
@@ -1369,12 +1372,6 @@ impl From<Vec<SetVal>> for SetVals {
         SetVals(inner)
     }
 }
-
-// impl Into<Index> for SetVals {
-//     fn into(self) -> Index {
-//         SmallVec::from_vec(self.0)
-//     }
-// }
 
 /// Index
 pub type Index = SmallVec<[SetVal; 6]>;

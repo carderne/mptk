@@ -55,9 +55,7 @@ pub fn resolve_param(param: ParamWithData) -> Param {
                     for row in table.rows {
                         for (col, value) in table.cols.iter().zip(row.values.iter()) {
                             arr.insert(
-                                [target_idxs.clone(), vec![row.label.clone(), col.clone()]]
-                                    .concat()
-                                    .into(),
+                                [target_idxs.clone(), vec![row.label, *col]].concat().into(),
                                 *value,
                             );
                         }
