@@ -137,7 +137,7 @@ pub fn recurse(expr: &Expr, lookups: &Lookups, idx_val_map: &IdxValMap) -> Vec<T
             match op {
                 MathOp::Add => match (lhs_num, rhs_num) {
                     (Some(lhs), Some(rhs)) => vec![Term::Num(lhs + rhs)],
-                    _ => [lhs, rhs].concat(),
+                    _ => lhs.into_iter().chain(rhs).collect(),
                 },
                 MathOp::Sub => match (lhs_num, rhs_num) {
                     (Some(lhs), Some(rhs)) => vec![Term::Num(lhs - rhs)],
@@ -147,17 +147,14 @@ pub fn recurse(expr: &Expr, lookups: &Lookups, idx_val_map: &IdxValMap) -> Vec<T
                             .filter_map(|p| if let Term::Pair(n) = p { Some(n) } else { None })
                             .collect();
 
-                        let rhs_pairs_neg: Vec<Term> = rhs_pairs
-                            .into_iter()
-                            .map(|pair| {
-                                Term::Pair(Pair {
-                                    var: pair.var,
-                                    index: pair.index,
-                                    coeff: -pair.coeff,
-                                })
+                        let rhs_pairs_neg = rhs_pairs.into_iter().map(|pair| {
+                            Term::Pair(Pair {
+                                var: pair.var,
+                                index: pair.index,
+                                coeff: -pair.coeff,
                             })
-                            .collect();
-                        [lhs, rhs_pairs_neg].concat()
+                        });
+                        lhs.into_iter().chain(rhs_pairs_neg).collect()
                     }
                     (None, Some(num)) => lhs
                         .into_iter()
@@ -298,7 +295,11 @@ pub fn domain_to_indexes(
                         .resolve(&concrete_idx, lookups)
                         .0
                         .into_iter()
-                        .map(|val| [existing.as_slice(), &[val]].concat())
+                        .map(|val| {
+                            let mut new_idx = existing.clone();
+                            new_idx.push(val);
+                            new_idx
+                        })
                         .collect::<Vec<_>>()
                 }));
             }
@@ -438,7 +439,7 @@ pub fn algebra(lhs: Vec<Term>, rhs: Vec<Term>) -> (Vec<Pair>, f64) {
     let lhs_nums_neg: Vec<f64> = lhs_nums.into_iter().map(|n| -n).collect();
 
     let rhs_total: f64 = [rhs_nums, lhs_nums_neg].into_iter().flatten().sum();
-    let pairs = [lhs_pairs, rhs_pairs_neg].concat();
+    let pairs = lhs_pairs.into_iter().chain(rhs_pairs_neg).collect();
     (pairs, rhs_total)
 }
 
