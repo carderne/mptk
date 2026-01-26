@@ -1,61 +1,70 @@
+use std::io::{BufWriter, Write};
+
 use crate::{
     gmpl::resolve,
     mps::{BoundsMap, ColsMap, Compiled, Index, RowsMap, bound::BoundsOp, constraints::RowType},
 };
 
 pub fn print_mps(compiled: Compiled, model_name: &str) {
-    println!("NAME {model_name}");
-    print_rows(&compiled.rows);
-    print_cols(compiled.cols);
-    print_rhs(&compiled.rows);
-    print_bounds(compiled.bounds);
-    println!("ENDATA");
+    let stdout = std::io::stdout();
+    let mut w = BufWriter::with_capacity(256 * 1024, stdout.lock());
+
+    writeln!(w, "NAME {model_name}").unwrap();
+    write_rows(&mut w, &compiled.rows);
+    write_cols(&mut w, compiled.cols);
+    write_rhs(&mut w, &compiled.rows);
+    write_bounds(&mut w, compiled.bounds);
+    writeln!(w, "ENDATA").unwrap();
+    // BufWriter flushes on drop
 }
 
-fn print_rows(rows: &RowsMap) {
-    println!("ROWS");
+fn write_rows(w: &mut impl Write, rows: &RowsMap) {
+    writeln!(w, "ROWS").unwrap();
     for ((name, idx), (dir, _)) in rows {
-        let idx = format_index_vals(idx);
         let name = resolve(*name);
-        println!(" {dir}  {name}{idx}")
+        write!(w, " {dir}  {name}").unwrap();
+        write_index_vals(w, idx);
+        writeln!(w).unwrap();
     }
 }
 
-fn print_cols(cols: ColsMap) {
-    println!("COLUMNS");
+fn write_cols(w: &mut impl Write, cols: ColsMap) {
+    writeln!(w, "COLUMNS").unwrap();
     for ((var_name, var_index), con_map) in cols {
+        let var_name = resolve(var_name);
         for ((con_name, con_index), val) in con_map {
             if val != 0.0 {
-                let var_idx = format_index_vals(&var_index);
-                let con_idx = format_index_vals(&con_index);
-                let var_name = resolve(var_name);
                 let con_name = resolve(con_name);
-                println!(" {}{} {}{} {}", var_name, var_idx, con_name, con_idx, val);
+                write!(w, " {var_name}").unwrap();
+                write_index_vals(w, &var_index);
+                write!(w, " {con_name}").unwrap();
+                write_index_vals(w, &con_index);
+                writeln!(w, " {val}").unwrap();
             }
         }
     }
 }
 
-fn print_rhs(rows: &RowsMap) {
-    println!("RHS");
+fn write_rhs(w: &mut impl Write, rows: &RowsMap) {
+    writeln!(w, "RHS").unwrap();
     for ((name, idx), (row_type, val)) in rows {
         // Skip N-type rows (objective function) - they should never have RHS
-        // TODO: why were these getting printed? Small 0.00.. value?
         if *row_type == RowType::N {
             continue;
         }
         // MPS format assumes RHS is 0 if not provided
         // NB: -0 and +0 are different values
         if *val != 0.0 {
-            let idx = format_index_vals(idx);
             let name = resolve(*name);
-            println!(" RHS1 {name}{idx} {val}");
+            write!(w, " RHS1 {name}").unwrap();
+            write_index_vals(w, idx);
+            writeln!(w, " {val}").unwrap();
         }
     }
 }
 
-fn print_bounds(bounds: BoundsMap) {
-    println!("BOUNDS");
+fn write_bounds(w: &mut impl Write, bounds: BoundsMap) {
+    writeln!(w, "BOUNDS").unwrap();
 
     for ((var_name, var_idx), bounds) in bounds {
         if bounds.op == BoundsOp::LO && bounds.val == Some(0.0) {
@@ -63,28 +72,30 @@ fn print_bounds(bounds: BoundsMap) {
             continue;
         }
 
-        let val = match bounds.val {
-            Some(val) => val.to_string(),
-            None => String::new(),
-        };
-
         let var_name = resolve(var_name);
+        write!(w, " {} BND1 {var_name}", bounds.op).unwrap();
+        write_index_vals(w, &var_idx);
 
-        println!(
-            " {} BND1 {}{} {}",
-            bounds.op,
-            var_name,
-            format_index_vals(&var_idx),
-            val
-        );
+        match bounds.val {
+            Some(val) => writeln!(w, " {val}").unwrap(),
+            None => writeln!(w).unwrap(),
+        };
     }
 }
 
-fn format_index_vals(v: &Index) -> String {
-    if v.is_empty() {
-        String::new()
-    } else {
-        let items: Vec<String> = v.iter().map(|s| s.to_string()).collect();
-        format!("[{}]", items.join(","))
+/// Write index values directly to the buffer, avoiding String allocation
+#[inline]
+fn write_index_vals(w: &mut impl Write, v: &Index) {
+    if !v.is_empty() {
+        write!(w, "[").unwrap();
+        let mut first = true;
+        for item in v.iter() {
+            if !first {
+                write!(w, ",").unwrap();
+            }
+            first = false;
+            write!(w, "{item}").unwrap();
+        }
+        write!(w, "]").unwrap();
     }
 }
