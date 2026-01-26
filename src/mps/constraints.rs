@@ -10,7 +10,6 @@ use crate::mps::lookup::Lookups;
 use crate::mps::param::ParamVal;
 use itertools::Itertools;
 use lasso::Spur;
-use ref_cast::RefCast;
 
 #[derive(Clone, Debug)]
 pub struct Pair {
@@ -270,7 +269,7 @@ pub fn domain_to_indexes(
                 Box::new(vec![vec![]].into_iter());
             for part in parts {
                 cartesian = Box::new(cartesian.flat_map(|existing| {
-                    let mut idx_map = get_index_map(parts, Index::ref_cast(&existing));
+                    let mut idx_map = get_index_map(parts, &existing);
                     idx_map.extend(idx_val_map.clone());
                     let concrete_idx = concrete_index(&part.subscript, &idx_map);
 
@@ -425,7 +424,9 @@ pub fn algebra(lhs: Vec<Term>, rhs: Vec<Term>) -> (Vec<Pair>, f64) {
     (pairs, rhs_total)
 }
 
-pub fn get_index_map(parts: &[DomainPart], idx: &Index) -> IdxValMap {
+// I'd prefer this function to accept an Index only, but then I have to clone for the Vec->SmallVec
+// conversion
+pub fn get_index_map(parts: &[DomainPart], idx: &[SetVal]) -> IdxValMap {
     // idx_val_map stores the current LOCATION
     // as a dict like:
     // { y => 2014, r: "Africa" }

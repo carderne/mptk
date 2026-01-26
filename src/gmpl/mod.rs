@@ -7,7 +7,7 @@ use lasso::ThreadedRodeo;
 use pest::iterators::Pair;
 use pest::iterators::Pairs;
 use pest::pratt_parser::{Assoc::*, Op, PrattParser};
-use ref_cast::RefCast;
+use smallvec::{SmallVec, smallvec};
 
 use crate::grammar::Rule;
 
@@ -373,7 +373,7 @@ pub struct SetData {
 impl SetData {
     pub fn from_entry(entry: Pair<Rule>) -> Self {
         let mut name = String::new();
-        let mut index = Vec::new();
+        let mut index = smallvec![];
         let mut values = Vec::new();
 
         for pair in entry.into_inner() {
@@ -433,7 +433,7 @@ impl SetData {
 
         Self {
             name,
-            index: Index(index),
+            index,
             values: SetVals(values),
         }
     }
@@ -1351,7 +1351,7 @@ impl fmt::Display for VarSubscripted {
 }
 
 /// SetVals
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Default, RefCast)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Default)]
 #[repr(transparent)]
 pub struct SetVals(pub Vec<SetVal>);
 
@@ -1369,24 +1369,14 @@ impl From<Vec<SetVal>> for SetVals {
     }
 }
 
+// impl Into<Index> for SetVals {
+//     fn into(self) -> Index {
+//         SmallVec::from_vec(self.0)
+//     }
+// }
+
 /// Index
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Default, RefCast)]
-#[repr(transparent)]
-pub struct Index(pub Vec<SetVal>);
-
-impl Deref for Index {
-    type Target = Vec<SetVal>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl From<Vec<SetVal>> for Index {
-    fn from(inner: Vec<SetVal>) -> Self {
-        Index(inner)
-    }
-}
+pub type Index = SmallVec<[SetVal; 6]>;
 
 /// Subscript (array indexing with optional shifts)
 #[derive(Clone, Debug, Default)]

@@ -17,7 +17,7 @@ log = "0.4.28"
 pest = "2.8.3"
 pest_derive = "2.8.3"
 rayon = "1.11.0"
-ref-cast = "1.0.25"
+smallvec = "1.15.1"
 
 [lib]
 name = "mptk"
