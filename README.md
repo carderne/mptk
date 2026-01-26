@@ -1,12 +1,5 @@
 # MPTK (MathProg Translation Kit)
 
-## Objectives:
-- [x] A grammar capable of parsing [GMPL](https://en.wikibooks.org/wiki/GLPK/GMPL_(MathProg)) .mod and .dat files
-- [x] Complete internal representation (IR) of parsed models and data
-- [x] Collate model and data sections
-- [x] Interpret functions, domains etc in the model 
-- [z] Output to [MPS](https://en.wikipedia.org/wiki/MPS_(format))
-
 ## Quickstart
 Install
 ```bash
@@ -40,10 +33,7 @@ cargo make run
 
 ## Docs
 
-- [Code Overview](docs/CODE_OVERVIEW.md) - Architecture and implementation details
 - [Grammar](docs/GRAMMAR.md) - GMPL grammar specification and coverage
-- [Example IR](docs/EXAMPLE_IR.md) - Sample intermediate representation output
-- [Future Plan](docs/FUTURE_PLAN.md) - Development roadmap for Phases 2-3
 
 ## Notes
 ### Note on indexing
